@@ -83,3 +83,4 @@ tienda-deportes/
 - Documentar todas las decisiones arquitectónicas
 - Implementar testing desde el inicio
 - Considerar escalabilidad en cada decisión
+git remote set-url origin https://TU_TOKEN_AQUI@github.com/armejiama7774/tienda-deportes.git
