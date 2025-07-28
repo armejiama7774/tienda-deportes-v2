@@ -12,9 +12,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
 
 /**
- * Configuración de seguridad temporal para desarrollo.
- * Esta configuración es permisiva para facilitar el desarrollo inicial.
- * En fases posteriores se implementará un sistema de seguridad robusto.
+ * Configuración de seguridad para desarrollo.
+ * EVOLUCIÓN: CSRF deshabilitado para facilitar desarrollo de APIs REST.
+ * En producción se implementará autenticación JWT + CORS específico.
  */
 @Configuration
 @EnableWebSecurity
@@ -23,15 +23,17 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable()) // Deshabilitar CSRF para APIs REST
-            .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Configurar CORS
+            .csrf(csrf -> csrf.disable()) // Deshabilitado para APIs REST
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(authz -> authz
-                .requestMatchers("/api/**").permitAll() // Permitir acceso a todas las APIs
-                .requestMatchers("/h2-console/**").permitAll() // Permitir acceso a H2 console
-                .requestMatchers("/actuator/health").permitAll() // Permitir health check
+                .requestMatchers("/api/**").permitAll()
+                .requestMatchers("/h2-console/**").permitAll()
+                .requestMatchers("/actuator/health").permitAll()
                 .anyRequest().authenticated()
             )
-            .headers(headers -> headers.frameOptions().deny()); // Configuración por defecto más segura
+            .headers(headers -> headers
+                .frameOptions().sameOrigin()
+            );
 
         return http.build();
     }
@@ -39,14 +41,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(Arrays.asList("*")); // En producción debe ser más restrictivo
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
-        
         return source;
     }
 }

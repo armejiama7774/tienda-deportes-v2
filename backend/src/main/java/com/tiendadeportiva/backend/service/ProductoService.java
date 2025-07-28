@@ -49,12 +49,31 @@ public class ProductoService implements IProductoService {
     }
 
     /**
-     * Busca un producto por su ID
+     * Obtiene un producto por ID.
+     * Solo devuelve productos activos (no eliminados con soft delete).
+     * 
+     * @param id ID del producto a buscar
+     * @return Optional con el producto si existe y está activo
      */
     @Transactional(readOnly = true)
     public Optional<Producto> obtenerProductoPorId(Long id) {
-        logger.debug("Buscando producto con ID: {}", id);
-        return productoRepository.findById(id);
+        logger.info("Buscando producto con ID: {}", id);
+        
+        if (id == null || id <= 0) {
+            logger.warn("ID de producto inválido: {}", id);
+            return Optional.empty();
+        }
+        
+        Optional<Producto> producto = productoRepository.findById(id);
+        
+        // CORRECCIÓN: Usar getActivo() en lugar de isActivo()
+        if (producto.isPresent() && producto.get().getActivo()) {
+            logger.info("Producto encontrado: {}", producto.get().getNombre());
+            return producto;
+        }
+        
+        logger.info("Producto con ID {} no encontrado o está inactivo", id);
+        return Optional.empty();
     }
 
     /**

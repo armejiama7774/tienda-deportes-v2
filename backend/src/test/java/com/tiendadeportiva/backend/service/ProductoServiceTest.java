@@ -100,6 +100,9 @@ class ProductoServiceTest {
     void debeObtenerProductoPorIdCuandoExiste() {
         // Arrange
         Long productId = 1L;
+        productoValido.setId(productId);  // ← ESTO faltaba
+        productoValido.setActivo(true);   // ← Y esto también por seguridad
+        
         when(productoRepository.findById(productId))
                 .thenReturn(Optional.of(productoValido));
 
@@ -286,5 +289,26 @@ class ProductoServiceTest {
 
         verify(productoRepository, never()).findById(any());
         verify(productoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("No debe obtener un producto eliminado (inactivo)")
+    void noDebeObtenerProductoEliminado() {
+        // Arrange
+        Long productId = 1L;
+        Producto productoEliminado = new Producto();
+        productoEliminado.setId(productId);
+        productoEliminado.setNombre("Producto Eliminado");
+        productoEliminado.setActivo(false); // Producto eliminado
+        
+        when(productoRepository.findById(productId))
+            .thenReturn(Optional.of(productoEliminado));
+        
+        // Act
+        Optional<Producto> resultado = productoService.obtenerProductoPorId(productId);
+        
+        // Assert
+        assertThat(resultado).isEmpty();
+        verify(productoRepository).findById(productId);
     }
 }
