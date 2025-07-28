@@ -3,17 +3,11 @@ package com.tiendadeportiva.backend.repository;
 import com.tiendadeportiva.backend.model.Producto;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * Repositorio para la entidad Producto.
- * Implementa el patrón Repository usando Spring Data JPA.
- * En fases posteriores evolucionará hacia una implementación más sofisticada.
- */
 @Repository
 public interface ProductoRepository extends JpaRepository<Producto, Long> {
 
@@ -30,8 +24,7 @@ public interface ProductoRepository extends JpaRepository<Producto, Long> {
     /**
      * Busca productos por nombre que contenga el texto especificado (case-insensitive)
      */
-    @Query("SELECT p FROM Producto p WHERE LOWER(p.nombre) LIKE LOWER(CONCAT('%', :nombre, '%')) AND p.activo = true")
-    List<Producto> findByNombreContainingIgnoreCaseAndActivoTrue(@Param("nombre") String nombre);
+    List<Producto> findByNombreContainingIgnoreCaseAndActivoTrue(String nombre);
 
     /**
      * Busca productos en un rango de precios
@@ -45,26 +38,16 @@ public interface ProductoRepository extends JpaRepository<Producto, Long> {
     List<Producto> findProductosConStock();
 
     /**
-     * Busca productos por categoría y marca
-     */
-    List<Producto> findByCategoriaAndMarcaAndActivoTrue(String categoria, String marca);
-
-    /**
      * Obtiene todas las categorías únicas de productos activos
      */
-    @Query("SELECT DISTINCT p.categoria FROM Producto p WHERE p.activo = true ORDER BY p.categoria")
+    @Query("SELECT DISTINCT p.categoria FROM Producto p WHERE p.activo = true")
     List<String> findDistinctCategorias();
 
     /**
      * Obtiene todas las marcas únicas de productos activos
      */
-    @Query("SELECT DISTINCT p.marca FROM Producto p WHERE p.activo = true ORDER BY p.marca")
+    @Query("SELECT DISTINCT p.marca FROM Producto p WHERE p.activo = true")
     List<String> findDistinctMarcas();
-
-    /**
-     * Busca productos activos ordenados por precio ascendente
-     */
-    List<Producto> findByActivoTrueOrderByPrecioAsc();
 
     /**
      * Busca productos activos ordenados por fecha de creación descendente (más recientes primero)
@@ -76,4 +59,15 @@ public interface ProductoRepository extends JpaRepository<Producto, Long> {
      * Útil para validaciones de negocio de duplicados
      */
     boolean existsByNombreAndMarcaAndActivoTrue(String nombre, String marca);
+
+    /**
+     * Verifica si existe un producto activo con el mismo nombre
+     * Útil para validaciones de negocio de duplicados
+     */
+    boolean existsByNombreAndActivoTrue(String nombre);
+
+    /**
+     * Cuenta el número de productos activos
+     */
+    long countByActivoTrue();
 }

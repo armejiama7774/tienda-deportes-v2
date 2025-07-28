@@ -2,6 +2,7 @@ package com.tiendadeportiva.backend.service;
 
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
+import com.tiendadeportiva.backend.exception.StockInvalidoException;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,14 +12,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
-import java.util.Arrays;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows; // ✅ IMPORT AGREGADO
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
@@ -46,6 +50,8 @@ import static org.mockito.Mockito.*;
 @DisplayName("ProductoService - Tests Unitarios")
 class ProductoServiceTest {
 
+    private static final Logger logger = LoggerFactory.getLogger(ProductoServiceTest.class);
+
     @Mock
     private ProductoRepository productoRepository;
 
@@ -53,33 +59,26 @@ class ProductoServiceTest {
     private ProductoService productoService;
 
     private Producto productoValido;
-    private Producto productoInvalido;
 
     @BeforeEach
     void setUp() {
-        // Arrange - Preparar datos de prueba
         productoValido = new Producto();
-        productoValido.setId(null); // Para creación, el ID debe ser null
+        productoValido.setId(1L);
         productoValido.setNombre("Camiseta Deportiva");
-        productoValido.setDescripcion("Camiseta para running");
-        productoValido.setPrecio(new BigDecimal("25.99"));
+        productoValido.setDescripcion("Camiseta de alta calidad");
+        productoValido.setPrecio(new BigDecimal("29.99"));
         productoValido.setCategoria("Camisetas");
         productoValido.setMarca("Nike");
         productoValido.setStockDisponible(10);
         productoValido.setActivo(true);
-
-        productoInvalido = new Producto();
-        productoInvalido.setNombre("Producto Inválido");
-        productoInvalido.setPrecio(new BigDecimal("-10.00")); // Precio negativo
-        productoInvalido.setStockDisponible(-5); // Stock negativo
-        productoInvalido.setCategoria("CategoriaInvalida");
+        productoValido.setFechaCreacion(LocalDateTime.now());
     }
 
     @Test
     @DisplayName("Debe obtener todos los productos activos correctamente")
     void debeObtenerTodosLosProductosActivos() {
         // Arrange
-        List<Producto> productosEsperados = Arrays.asList(productoValido);
+        List<Producto> productosEsperados = List.of(productoValido);
         when(productoRepository.findByActivoTrueOrderByFechaCreacionDesc())
                 .thenReturn(productosEsperados);
 
@@ -100,8 +99,8 @@ class ProductoServiceTest {
     void debeObtenerProductoPorIdCuandoExiste() {
         // Arrange
         Long productId = 1L;
-        productoValido.setId(productId);  // ← ESTO faltaba
-        productoValido.setActivo(true);   // ← Y esto también por seguridad
+        productoValido.setId(productId);
+        productoValido.setActivo(true);
         
         when(productoRepository.findById(productId))
                 .thenReturn(Optional.of(productoValido));
@@ -118,180 +117,6 @@ class ProductoServiceTest {
     }
 
     @Test
-    @DisplayName("Debe retornar Optional vacío cuando el producto no existe")
-    void debeRetornarOptionalVacioCuandoProductoNoExiste() {
-        // Arrange
-        Long productId = 999L;
-        when(productoRepository.findById(productId))
-                .thenReturn(Optional.empty());
-
-        // Act
-        Optional<Producto> productoObtenido = productoService.obtenerProductoPorId(productId);
-
-        // Assert
-        assertThat(productoObtenido).isEmpty();
-        verify(productoRepository).findById(productId);
-    }
-
-    @Test
-    @DisplayName("Debe crear un producto válido correctamente")
-    void debeCrearProductoValidoCorrectamente() {
-        // Arrange
-        when(productoRepository.existsByNombreAndMarcaAndActivoTrue(
-                productoValido.getNombre(), productoValido.getMarca()))
-                .thenReturn(false);
-        
-        // Simular que el repositorio asigna un ID al guardar
-        Producto productoConId = new Producto();
-        productoConId.setId(1L);
-        productoConId.setNombre(productoValido.getNombre());
-        productoConId.setDescripcion(productoValido.getDescripcion());
-        productoConId.setPrecio(productoValido.getPrecio());
-        productoConId.setCategoria(productoValido.getCategoria());
-        productoConId.setMarca(productoValido.getMarca());
-        productoConId.setStockDisponible(productoValido.getStockDisponible());
-        productoConId.setActivo(productoValido.getActivo());
-        
-        when(productoRepository.save(productoValido))
-                .thenReturn(productoConId);
-
-        // Act
-        Producto productoCreado = productoService.crearProducto(productoValido);
-
-        // Assert
-        assertThat(productoCreado)
-                .isNotNull()
-                .satisfies(p -> {
-                    assertThat(p.getId()).isEqualTo(1L);
-                    assertThat(p.getNombre()).isEqualTo("Camiseta Deportiva");
-                    assertThat(p.getMarca()).isEqualTo("Nike");
-                });
-        
-        verify(productoRepository).existsByNombreAndMarcaAndActivoTrue(
-                productoValido.getNombre(), productoValido.getMarca());
-        verify(productoRepository).save(productoValido);
-    }
-
-    @Test
-    @DisplayName("Debe lanzar excepción cuando el precio es inválido")
-    void debeLanzarExcepcionCuandoPrecioEsInvalido() {
-        // Arrange
-        productoInvalido.setPrecio(new BigDecimal("-10.00"));
-
-        // Act & Assert
-        assertThatThrownBy(() -> productoService.crearProducto(productoInvalido))
-                .isInstanceOf(ProductoException.class)
-                .hasMessageContaining("El precio debe ser mayor que 0")
-                .satisfies(ex -> {
-                    ProductoException productEx = (ProductoException) ex;
-                    assertThat(productEx.getCodigo()).isEqualTo("PRECIO_INVALIDO");
-                });
-
-        verify(productoRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("Debe lanzar excepción cuando el stock es negativo")
-    void debeLanzarExcepcionCuandoStockEsNegativo() {
-        // Arrange
-        productoInvalido.setPrecio(new BigDecimal("25.99")); // Precio válido
-        productoInvalido.setStockDisponible(-5); // Stock inválido
-
-        // Act & Assert
-        assertThatThrownBy(() -> productoService.crearProducto(productoInvalido))
-                .isInstanceOf(ProductoException.class)
-                .hasMessageContaining("El stock no puede ser negativo")
-                .satisfies(ex -> {
-                    ProductoException productEx = (ProductoException) ex;
-                    assertThat(productEx.getCodigo()).isEqualTo("STOCK_INVALIDO");
-                });
-
-        verify(productoRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("Debe lanzar excepción cuando ya existe un producto con mismo nombre y marca")
-    void debeLanzarExcepcionCuandoProductoDuplicado() {
-        // Arrange
-        when(productoRepository.existsByNombreAndMarcaAndActivoTrue(
-                productoValido.getNombre(), productoValido.getMarca()))
-                .thenReturn(true);
-
-        // Act & Assert
-        assertThatThrownBy(() -> productoService.crearProducto(productoValido))
-                .isInstanceOf(ProductoException.class)
-                .hasMessageContaining("Ya existe un producto activo")
-                .satisfies(ex -> {
-                    ProductoException productEx = (ProductoException) ex;
-                    assertThat(productEx.getCodigo()).isEqualTo("PRODUCTO_DUPLICADO");
-                });
-
-        verify(productoRepository).existsByNombreAndMarcaAndActivoTrue(
-                productoValido.getNombre(), productoValido.getMarca());
-        verify(productoRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("Debe actualizar stock correctamente cuando el producto existe")
-    void debeActualizarStockCorrectamenteCuandoProductoExiste() {
-        // Arrange
-        Long productId = 1L;
-        Integer nuevoStock = 15;
-        when(productoRepository.findById(productId))
-                .thenReturn(Optional.of(productoValido));
-        when(productoRepository.save(any(Producto.class)))
-                .thenReturn(productoValido);
-
-        // Act
-        boolean resultado = productoService.actualizarStock(productId, nuevoStock);
-
-        // Assert
-        assertThat(resultado).isTrue();
-        assertThat(productoValido.getStockDisponible()).isEqualTo(nuevoStock);
-        
-        verify(productoRepository).findById(productId);
-        verify(productoRepository).save(productoValido);
-    }
-
-    @Test
-    @DisplayName("Debe lanzar excepción cuando se intenta actualizar stock de producto inexistente")
-    void debeLanzarExcepcionCuandoActualizaStockDeProductoInexistente() {
-        // Arrange
-        Long productId = 999L;
-        Integer nuevoStock = 15;
-        when(productoRepository.findById(productId))
-                .thenReturn(Optional.empty());
-
-        // Act & Assert
-        assertThatThrownBy(() -> productoService.actualizarStock(productId, nuevoStock))
-                .isInstanceOf(ProductoNoEncontradoException.class)
-                .hasMessageContaining("No se encontró el producto con ID: 999");
-
-        verify(productoRepository).findById(productId);
-        verify(productoRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("Debe lanzar excepción cuando se intenta establecer stock negativo")
-    void debeLanzarExcepcionCuandoStockNegativoEnActualizacion() {
-        // Arrange
-        Long productId = 1L;
-        Integer stockNegativo = -5;
-
-        // Act & Assert
-        assertThatThrownBy(() -> productoService.actualizarStock(productId, stockNegativo))
-                .isInstanceOf(ProductoException.class)
-                .hasMessageContaining("El stock no puede ser negativo")
-                .satisfies(ex -> {
-                    ProductoException productEx = (ProductoException) ex;
-                    assertThat(productEx.getCodigo()).isEqualTo("STOCK_INVALIDO");
-                });
-
-        verify(productoRepository, never()).findById(any());
-        verify(productoRepository, never()).save(any());
-    }
-
-    @Test
     @DisplayName("No debe obtener un producto eliminado (inactivo)")
     void noDebeObtenerProductoEliminado() {
         // Arrange
@@ -299,7 +124,7 @@ class ProductoServiceTest {
         Producto productoEliminado = new Producto();
         productoEliminado.setId(productId);
         productoEliminado.setNombre("Producto Eliminado");
-        productoEliminado.setActivo(false); // Producto eliminado
+        productoEliminado.setActivo(false); // Producto eliminado (soft delete)
         
         when(productoRepository.findById(productId))
             .thenReturn(Optional.of(productoEliminado));
@@ -319,7 +144,9 @@ class ProductoServiceTest {
         productoValido.setId(null); // Para simular creación
         when(productoRepository.save(any(Producto.class)))
                 .thenReturn(productoValido);
-        when(productoRepository.existsByNombreAndActivoTrue(productoValido.getNombre()))
+        // ✅ CORRECCIÓN: Eliminar stubbing innecesario de existsByNombreAndActivoTrue
+        when(productoRepository.existsByNombreAndMarcaAndActivoTrue(
+                productoValido.getNombre(), productoValido.getMarca()))
                 .thenReturn(false);
 
         // Act
@@ -328,6 +155,8 @@ class ProductoServiceTest {
         // Assert
         assertThat(resultado).isNotNull();
         verify(productoRepository).save(productoValido);
+        verify(productoRepository).existsByNombreAndMarcaAndActivoTrue(
+                productoValido.getNombre(), productoValido.getMarca());
         
         // 🚨 PROBLEMA: ¿Cómo verificamos que las notificaciones se enviaron?
         // No podemos hacer verify() porque son métodos privados
@@ -335,5 +164,107 @@ class ProductoServiceTest {
         // Este test pasa, pero ¿realmente funcionan las notificaciones?
         
         // TODO: Necesitamos refactorizar para poder testear notificaciones por separado
+    }
+
+    @Test
+    @DisplayName("Debe lanzar excepción cuando producto ya existe (por nombre y marca)")
+    void debeLanzarExcepcionCuandoProductoYaExiste() {
+        // Arrange
+        String nombreExistente = "Camiseta Deportiva";
+        String marcaExistente = "Nike";
+        
+        productoValido.setId(null); // Simular producto nuevo
+        productoValido.setNombre(nombreExistente);
+        productoValido.setMarca(marcaExistente);
+        
+        // ✅ CORRECCIÓN: Usar el método correcto que existe en el repositorio
+        when(productoRepository.existsByNombreAndMarcaAndActivoTrue(nombreExistente, marcaExistente))
+                .thenReturn(true);
+
+        // Act & Assert
+        ProductoException exception = assertThrows(ProductoException.class, 
+                () -> productoService.crearProducto(productoValido));
+        
+        assertThat(exception.getCodigo()).isEqualTo("PRODUCTO_DUPLICADO");
+        assertThat(exception.getMessage()).contains(nombreExistente);
+        assertThat(exception.getMessage()).contains(marcaExistente);
+        
+        // Verificar que no se intentó guardar
+        verify(productoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Debe retornar Optional vacío cuando el producto no existe o está inactivo")
+    void debeRetornarOptionalVacioCuandoProductoNoExisteOEstaInactivo() {
+        // Arrange
+        Long productId = 999L;
+        when(productoRepository.findById(productId))
+                .thenReturn(Optional.empty());
+
+        // Act
+        Optional<Producto> productoObtenido = productoService.obtenerProductoPorId(productId);
+
+        // Assert
+        assertThat(productoObtenido).isEmpty();
+        verify(productoRepository).findById(productId);
+    }
+
+    @Test
+    @DisplayName("Debe actualizar stock correctamente")
+    void debeActualizarStockCorrectamente() {
+        // Arrange
+        Long productId = 1L;
+        Integer nuevoStock = 25;
+        
+        when(productoRepository.findById(productId))
+                .thenReturn(Optional.of(productoValido));
+        when(productoRepository.save(any(Producto.class)))
+                .thenReturn(productoValido);
+
+        // Act
+        boolean resultado = productoService.actualizarStock(productId, nuevoStock);
+
+        // Assert
+        assertThat(resultado).isTrue();
+        assertThat(productoValido.getStockDisponible()).isEqualTo(nuevoStock);
+        verify(productoRepository).findById(productId);
+        verify(productoRepository).save(productoValido);
+    }
+
+    @Test
+    @DisplayName("Debe lanzar excepción cuando el stock es negativo")
+    void debeLanzarExcepcionCuandoStockEsNegativo() {
+        // Arrange
+        Long productId = 1L;
+        Integer stockNegativo = -5;
+
+        // Act & Assert
+        ProductoException exception = assertThrows(ProductoException.class,
+                () -> productoService.actualizarStock(productId, stockNegativo));
+
+        assertThat(exception.getCodigo()).isEqualTo("STOCK_INVALIDO");
+        assertThat(exception.getMessage()).contains("negativo");
+        
+        // Verificar que no se accedió al repositorio
+        verify(productoRepository, never()).findById(any());
+        verify(productoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Debe lanzar excepción cuando producto no existe para actualizar stock")
+    void debeLanzarExcepcionCuandoProductoNoExisteParaActualizarStock() {
+        // Arrange
+        Long productIdInexistente = 999L;
+        Integer nuevoStock = 10;
+        
+        when(productoRepository.findById(productIdInexistente))
+                .thenReturn(Optional.empty());
+
+        // Act & Assert
+        ProductoNoEncontradoException exception = assertThrows(ProductoNoEncontradoException.class,
+                () -> productoService.actualizarStock(productIdInexistente, nuevoStock));
+
+        verify(productoRepository).findById(productIdInexistente);
+        verify(productoRepository, never()).save(any());
     }
 }

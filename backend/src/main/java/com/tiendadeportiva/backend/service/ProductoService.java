@@ -320,7 +320,7 @@ public class ProductoService implements IProductoService {
                 "El stock no puede ser negativo. Stock recibido: " + producto.getStockDisponible());
         }
         
-        // Validación de duplicados por nombre y marca
+        // 🔧 CORRECCIÓN: Validación de duplicados usando el método correcto
         if (producto.getId() == null) { // Solo para productos nuevos
             boolean existe = productoRepository.existsByNombreAndMarcaAndActivoTrue(
                 producto.getNombre(), producto.getMarca());
@@ -331,7 +331,7 @@ public class ProductoService implements IProductoService {
             }
         }
         
-        // Validación de categorías permitidas (ejemplo de regla de negocio)
+        // Resto de validaciones...
         List<String> categoriasPermitidas = List.of(
             "Camisetas", "Pantalones", "Zapatos", "Accesorios", 
             "Ropa Interior", "Conjuntos", "Chaquetas"
