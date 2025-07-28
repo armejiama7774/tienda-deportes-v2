@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -78,21 +79,99 @@ public class ProductoService implements IProductoService {
 
     /**
      * Crea un nuevo producto
+     * EVOLUCIÓN: Agregando notificaciones - primera señal de que necesitamos mejor arquitectura
      */
+    @Override
     public Producto crearProducto(Producto producto) {
         logger.info("Creando nuevo producto: {}", producto.getNombre());
         
-        // Validaciones de negocio
+        // Validaciones existentes
         validarProducto(producto);
         
+        // Asignar fecha de creación
+        producto.setFechaCreacion(LocalDateTime.now());
+        
+        // Guardar producto
         Producto productoGuardado = productoRepository.save(producto);
-        if (productoGuardado != null && productoGuardado.getId() != null) {
-            logger.info("Producto creado exitosamente con ID: {}", productoGuardado.getId());
-        } else {
-            logger.info("Producto creado exitosamente: {}", productoGuardado.getNombre());
-        }
+        logger.info("Producto creado exitosamente con ID: {}", productoGuardado.getId());
+        
+        // 🚨 NUEVO: Notificaciones - Esto va a crecer y complicarse...
+        enviarNotificaciones(productoGuardado);
         
         return productoGuardado;
+    }
+
+    /**
+     * Envía notificaciones cuando se crea un producto
+     * PROBLEMA: Este método va a crecer mucho y será difícil de testear
+     * TODO: Esto viola SRP y será pesadilla de mantenimiento
+     */
+    private void enviarNotificaciones(Producto producto) {
+        try {
+            // Notificación por email a administradores
+            logger.info("📧 Enviando email de notificación para nuevo producto: {}", producto.getNombre());
+            enviarEmailAdministradores(producto);
+            
+            // Actualizar cache del catálogo
+            logger.info("🔄 Actualizando cache del catálogo para producto: {}", producto.getNombre());
+            actualizarCacheCatalogo(producto);
+            
+            // Registrar auditoría
+            logger.info("📋 Registrando auditoría para producto: {}", producto.getNombre());
+            registrarAuditoria(producto);
+            
+            // TODO: En el futuro necesitaremos:
+            // - Webhooks a sistemas externos
+            // - SMS a gerentes
+            // - Push notifications
+            // - Actualizar sistemas de recomendaciones
+            // - Sincronizar con marketplaces externos
+            // ¿Dónde ponemos todo eso? ¿Cómo lo testeamos? ¿Qué pasa si uno falla?
+            
+        } catch (Exception e) {
+            // 🚨 PROBLEMA: Si falla una notificación, ¿qué hacemos?
+            // ¿Fallar toda la creación del producto? ¿Solo logear el error?
+            logger.error("Error enviando notificaciones para producto {}: {}", 
+                        producto.getId(), e.getMessage(), e);
+            // Por ahora solo logeamos, pero esto no es ideal...
+        }
+    }
+
+    /**
+     * Simula envío de email a administradores
+     * PROBLEMA: Hardcodeado y difícil de testear
+     */
+    private void enviarEmailAdministradores(Producto producto) {
+        // Simular delay de servicio externo
+        try {
+            Thread.sleep(100); // Simular latencia
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        
+        // TODO: Integración real con servicio de email
+        logger.info("📧 Email enviado a administradores sobre producto: {} - Precio: ${}", 
+                   producto.getNombre(), producto.getPrecio());
+    }
+
+    /**
+     * Simula actualización de cache
+     * PROBLEMA: Lógica de cache mezclada con lógica de negocio
+     */
+    private void actualizarCacheCatalogo(Producto producto) {
+        // TODO: Integración real con Redis/Hazelcast
+        logger.info("🔄 Cache actualizado - Categoría: {} - Stock: {}", 
+                   producto.getCategoria(), producto.getStockDisponible());
+    }
+
+    /**
+     * Registra auditoría del producto
+     * PROBLEMA: ¿Qué pasa si el log de auditoría falla?
+     */
+    private void registrarAuditoria(Producto producto) {
+        // TODO: Persistir en tabla de auditoría
+        logger.info("📋 Auditoría registrada - Producto ID: {} creado por: SYSTEM en: {}", 
+                   producto.getId(), LocalDateTime.now());
     }
 
     /**

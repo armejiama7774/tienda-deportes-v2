@@ -311,4 +311,29 @@ class ProductoServiceTest {
         assertThat(resultado).isEmpty();
         verify(productoRepository).findById(productId);
     }
+
+    @Test
+    @DisplayName("Debe crear producto correctamente CON notificaciones")
+    void debeCrearProductoConNotificaciones() {
+        // Arrange
+        productoValido.setId(null); // Para simular creación
+        when(productoRepository.save(any(Producto.class)))
+                .thenReturn(productoValido);
+        when(productoRepository.existsByNombreAndActivoTrue(productoValido.getNombre()))
+                .thenReturn(false);
+
+        // Act
+        Producto resultado = productoService.crearProducto(productoValido);
+
+        // Assert
+        assertThat(resultado).isNotNull();
+        verify(productoRepository).save(productoValido);
+        
+        // 🚨 PROBLEMA: ¿Cómo verificamos que las notificaciones se enviaron?
+        // No podemos hacer verify() porque son métodos privados
+        // No podemos mockear servicios externos porque están hardcodeados
+        // Este test pasa, pero ¿realmente funcionan las notificaciones?
+        
+        // TODO: Necesitamos refactorizar para poder testear notificaciones por separado
+    }
 }
