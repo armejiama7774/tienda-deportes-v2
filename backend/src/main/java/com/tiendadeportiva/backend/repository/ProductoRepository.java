@@ -70,4 +70,10 @@ public interface ProductoRepository extends JpaRepository<Producto, Long> {
      * Busca productos activos ordenados por fecha de creación descendente (más recientes primero)
      */
     List<Producto> findByActivoTrueOrderByFechaCreacionDesc();
+
+    /**
+     * Verifica si existe un producto activo con el mismo nombre y marca
+     * Útil para validaciones de negocio de duplicados
+     */
+    boolean existsByNombreAndMarcaAndActivoTrue(String nombre, String marca);
 }

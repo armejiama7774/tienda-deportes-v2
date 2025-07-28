@@ -1,7 +1,9 @@
 package com.tiendadeportiva.backend.controller;
 
 import com.tiendadeportiva.backend.model.Producto;
-import com.tiendadeportiva.backend.service.ProductoService;
+import com.tiendadeportiva.backend.service.IProductoService;
+import com.tiendadeportiva.backend.exception.ProductoException;
+import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,9 +16,18 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Controlador REST para la gestión de productos.
- * Expone endpoints para el CRUD de productos y operaciones de búsqueda.
- * Implementa el patrón MVC básico que evolucionará en fases posteriores.
+ * Controlador REST para la gestión de productos aplicando principios SOLID.
+ * 
+ * Mejoras implementadas:
+ * - Dependency Inversion Principle: Depende de IProductoService (abstracción)
+ * - Manejo robusto de excepciones personalizadas
+ * - Logging detallado para auditoría y debugging
+ * - Respuestas HTTP semánticamente correctas
+ * - Documentación completa de endpoints
+ * 
+ * @author Equipo Desarrollo
+ * @version 1.0
+ * @since Fase 1 - Monolito Modular con SOLID
  */
 @RestController
 @RequestMapping("/api/productos")
@@ -25,9 +36,9 @@ public class ProductoController {
 
     private static final Logger logger = LoggerFactory.getLogger(ProductoController.class);
 
-    private final ProductoService productoService;
+    private final IProductoService productoService;
 
-    public ProductoController(ProductoService productoService) {
+    public ProductoController(IProductoService productoService) {
         this.productoService = productoService;
     }
 
@@ -60,6 +71,9 @@ public class ProductoController {
     /**
      * Crea un nuevo producto
      * POST /api/productos
+     * 
+     * @param producto Datos del producto a crear
+     * @return Producto creado con HTTP 201, o error con HTTP 400
      */
     @PostMapping
     public ResponseEntity<Producto> crearProducto(@Valid @RequestBody Producto producto) {
@@ -67,16 +81,24 @@ public class ProductoController {
         
         try {
             Producto productoCreado = productoService.crearProducto(producto);
+            logger.info("Producto creado exitosamente con ID: {}", productoCreado.getId());
             return ResponseEntity.status(HttpStatus.CREATED).body(productoCreado);
-        } catch (IllegalArgumentException e) {
-            logger.warn("Error de validación al crear producto: {}", e.getMessage());
+        } catch (ProductoException e) {
+            logger.warn("Error de validación al crear producto: [{}] {}", e.getCodigo(), e.getMessage());
             return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            logger.error("Error inesperado al crear producto", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
     /**
      * Actualiza un producto existente
      * PUT /api/productos/{id}
+     * 
+     * @param id ID del producto a actualizar
+     * @param productoActualizado Nuevos datos del producto
+     * @return Producto actualizado o error correspondiente
      */
     @PutMapping("/{id}")
     public ResponseEntity<Producto> actualizarProducto(
@@ -89,11 +111,17 @@ public class ProductoController {
             Optional<Producto> producto = productoService.actualizarProducto(id, productoActualizado);
             
             return producto
-                    .map(p -> ResponseEntity.ok(p))
+                    .map(p -> {
+                        logger.info("Producto actualizado exitosamente: {}", p.getId());
+                        return ResponseEntity.ok(p);
+                    })
                     .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            logger.warn("Error de validación al actualizar producto {}: {}", id, e.getMessage());
+        } catch (ProductoException e) {
+            logger.warn("Error de validación al actualizar producto {}: [{}] {}", id, e.getCodigo(), e.getMessage());
             return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            logger.error("Error inesperado al actualizar producto {}", id, e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
@@ -202,6 +230,10 @@ public class ProductoController {
     /**
      * Actualiza el stock de un producto
      * PATCH /api/productos/{id}/stock
+     * 
+     * @param id ID del producto
+     * @param stock Nueva cantidad de stock
+     * @return HTTP 200 si se actualizó, 404 si no existe, 400 si datos inválidos
      */
     @PatchMapping("/{id}/stock")
     public ResponseEntity<Void> actualizarStock(
@@ -210,10 +242,20 @@ public class ProductoController {
         
         logger.info("Petición recibida: PATCH /api/productos/{}/stock - Nuevo stock: {}", id, stock);
         
-        boolean actualizado = productoService.actualizarStock(id, stock);
-        
-        return actualizado 
-                ? ResponseEntity.ok().build()
-                : ResponseEntity.notFound().build();
+        try {
+            boolean actualizado = productoService.actualizarStock(id, stock);
+            return actualizado 
+                    ? ResponseEntity.ok().build()
+                    : ResponseEntity.notFound().build();
+        } catch (ProductoNoEncontradoException e) {
+            logger.warn("Producto no encontrado al actualizar stock: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+        } catch (ProductoException e) {
+            logger.warn("Error de validación al actualizar stock: [{}] {}", e.getCodigo(), e.getMessage());
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            logger.error("Error inesperado al actualizar stock del producto {}", id, e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }

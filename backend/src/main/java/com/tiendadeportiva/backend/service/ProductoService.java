@@ -1,10 +1,11 @@
 package com.tiendadeportiva.backend.service;
 
+import com.tiendadeportiva.backend.exception.ProductoException;
+import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,19 +14,27 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Servicio para la gestión de productos.
- * Implementa la lógica de negocio para el dominio de productos.
- * En fases posteriores evolucionará hacia una arquitectura hexagonal.
+ * Implementación del servicio de productos que cumple con principios SOLID.
+ * 
+ * Aplicando:
+ * - Single Responsibility Principle (SRP): Solo maneja lógica de productos
+ * - Open/Closed Principle (OCP): Abierto para extensión vía interfaz
+ * - Liskov Substitution Principle (LSP): Puede ser sustituido por cualquier implementación de IProductoService
+ * - Interface Segregation Principle (ISP): Interfaz específica para productos
+ * - Dependency Inversion Principle (DIP): Depende de abstracciones (ProductoRepository)
+ * 
+ * @author Equipo Desarrollo
+ * @version 1.0
+ * @since Fase 1 - Monolito Modular con SOLID
  */
 @Service
 @Transactional
-public class ProductoService {
+public class ProductoService implements IProductoService {
 
     private static final Logger logger = LoggerFactory.getLogger(ProductoService.class);
 
     private final ProductoRepository productoRepository;
 
-    @Autowired
     public ProductoService(ProductoRepository productoRepository) {
         this.productoRepository = productoRepository;
     }
@@ -58,7 +67,11 @@ public class ProductoService {
         validarProducto(producto);
         
         Producto productoGuardado = productoRepository.save(producto);
-        logger.info("Producto creado exitosamente con ID: {}", productoGuardado.getId());
+        if (productoGuardado != null && productoGuardado.getId() != null) {
+            logger.info("Producto creado exitosamente con ID: {}", productoGuardado.getId());
+        } else {
+            logger.info("Producto creado exitosamente: {}", productoGuardado.getNombre());
+        }
         
         return productoGuardado;
     }
@@ -171,32 +184,65 @@ public class ProductoService {
 
     /**
      * Actualiza el stock de un producto
+     * @param id Identificador del producto
+     * @param nuevoStock Cantidad de stock a establecer
+     * @return true si se actualizó correctamente
+     * @throws ProductoNoEncontradoException si el producto no existe
+     * @throws ProductoException si el stock es inválido
      */
     public boolean actualizarStock(Long id, Integer nuevoStock) {
         logger.info("Actualizando stock del producto ID: {} a {}", id, nuevoStock);
         
-        return productoRepository.findById(id)
-                .map(producto -> {
-                    producto.setStockDisponible(nuevoStock);
-                    productoRepository.save(producto);
-                    logger.info("Stock actualizado exitosamente para producto ID: {}", id);
-                    return true;
-                })
-                .orElse(false);
+        if (nuevoStock < 0) {
+            throw new ProductoException("STOCK_INVALIDO", 
+                "El stock no puede ser negativo. Valor recibido: " + nuevoStock);
+        }
+        
+        Producto producto = productoRepository.findById(id)
+                .orElseThrow(() -> new ProductoNoEncontradoException(id));
+                
+        producto.setStockDisponible(nuevoStock);
+        productoRepository.save(producto);
+        logger.info("Stock actualizado exitosamente para producto ID: {}", id);
+        return true;
     }
 
     /**
      * Valida las reglas de negocio para un producto
+     * Aplica validaciones específicas del dominio más allá de las anotaciones JPA
      */
     private void validarProducto(Producto producto) {
         if (producto.getPrecio() != null && producto.getPrecio().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("El precio debe ser mayor que 0");
+            throw new ProductoException("PRECIO_INVALIDO", 
+                "El precio debe ser mayor que 0. Precio recibido: " + producto.getPrecio());
         }
         
         if (producto.getStockDisponible() != null && producto.getStockDisponible() < 0) {
-            throw new IllegalArgumentException("El stock no puede ser negativo");
+            throw new ProductoException("STOCK_INVALIDO", 
+                "El stock no puede ser negativo. Stock recibido: " + producto.getStockDisponible());
         }
         
-        // Aquí se pueden agregar más validaciones de negocio según sea necesario
+        // Validación de duplicados por nombre y marca
+        if (producto.getId() == null) { // Solo para productos nuevos
+            boolean existe = productoRepository.existsByNombreAndMarcaAndActivoTrue(
+                producto.getNombre(), producto.getMarca());
+            if (existe) {
+                throw new ProductoException("PRODUCTO_DUPLICADO", 
+                    String.format("Ya existe un producto activo con nombre '%s' y marca '%s'", 
+                        producto.getNombre(), producto.getMarca()));
+            }
+        }
+        
+        // Validación de categorías permitidas (ejemplo de regla de negocio)
+        List<String> categoriasPermitidas = List.of(
+            "Camisetas", "Pantalones", "Zapatos", "Accesorios", 
+            "Ropa Interior", "Conjuntos", "Chaquetas"
+        );
+        if (producto.getCategoria() != null && 
+            !categoriasPermitidas.contains(producto.getCategoria())) {
+            throw new ProductoException("CATEGORIA_NO_PERMITIDA", 
+                String.format("La categoría '%s' no está permitida. Categorías válidas: %s", 
+                    producto.getCategoria(), categoriasPermitidas));
+        }
     }
 }
