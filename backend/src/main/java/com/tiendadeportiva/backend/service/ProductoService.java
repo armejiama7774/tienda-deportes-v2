@@ -1,11 +1,13 @@
 package com.tiendadeportiva.backend.service;
 
+import com.tiendadeportiva.backend.event.ProductoCreadoEvent;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,9 +37,16 @@ public class ProductoService implements IProductoService {
     private static final Logger logger = LoggerFactory.getLogger(ProductoService.class);
 
     private final ProductoRepository productoRepository;
+    private final ApplicationEventPublisher applicationEventPublisher; // ✅ NUEVO
+    private final DescuentoService descuentoService; // ✅ NUEVA DEPENDENCIA
 
-    public ProductoService(ProductoRepository productoRepository) {
+    // Constructor actualizado
+    public ProductoService(ProductoRepository productoRepository, 
+                          ApplicationEventPublisher applicationEventPublisher,
+                          DescuentoService descuentoService) {
         this.productoRepository = productoRepository;
+        this.applicationEventPublisher = applicationEventPublisher;
+        this.descuentoService = descuentoService;
     }
 
     /**
@@ -79,99 +88,51 @@ public class ProductoService implements IProductoService {
 
     /**
      * Crea un nuevo producto
-     * EVOLUCIÓN: Agregando notificaciones - primera señal de que necesitamos mejor arquitectura
+     * EVOLUCIÓN COMPLETADA: ProductoService realmente limpio y enfocado
      */
     @Override
     public Producto crearProducto(Producto producto) {
         logger.info("Creando nuevo producto: {}", producto.getNombre());
         
-        // Validaciones existentes
+        // 1. Validaciones de dominio (responsabilidad principal)
         validarProducto(producto);
         
-        // Asignar fecha de creación
+        // 2. Lógica de negocio básica del dominio
         producto.setFechaCreacion(LocalDateTime.now());
         
-        // Guardar producto
+        // 3. Aplicar descuentos (delegado a servicio especializado)
+        DescuentoService.DescuentoInfo descuentoInfo = descuentoService.aplicarDescuentosAutomaticos(producto);
+        
+        // 4. Persistencia (responsabilidad principal)
         Producto productoGuardado = productoRepository.save(producto);
         logger.info("Producto creado exitosamente con ID: {}", productoGuardado.getId());
         
-        // 🚨 NUEVO: Notificaciones - Esto va a crecer y complicarse...
-        enviarNotificaciones(productoGuardado);
+        // 5. Log de descuentos aplicados
+        if (descuentoInfo.tieneDescuentos()) {
+            logger.info("💰 Descuentos aplicados a {}: {} | Ahorro: ${}", 
+                       productoGuardado.getNombre(), 
+                       descuentoInfo.getDescuentosAplicados(), 
+                       descuentoInfo.getTotalDescuento());
+        }
+        
+        // 6. Publicar evento (desacoplado)
+        publicarEventoProductoCreado(productoGuardado);
         
         return productoGuardado;
     }
 
     /**
-     * Envía notificaciones cuando se crea un producto
-     * PROBLEMA: Este método va a crecer mucho y será difícil de testear
-     * TODO: Esto viola SRP y será pesadilla de mantenimiento
+     * Publica evento de producto creado
      */
-    private void enviarNotificaciones(Producto producto) {
+    private void publicarEventoProductoCreado(Producto producto) {
         try {
-            // Notificación por email a administradores
-            logger.info("📧 Enviando email de notificación para nuevo producto: {}", producto.getNombre());
-            enviarEmailAdministradores(producto);
-            
-            // Actualizar cache del catálogo
-            logger.info("🔄 Actualizando cache del catálogo para producto: {}", producto.getNombre());
-            actualizarCacheCatalogo(producto);
-            
-            // Registrar auditoría
-            logger.info("📋 Registrando auditoría para producto: {}", producto.getNombre());
-            registrarAuditoria(producto);
-            
-            // TODO: En el futuro necesitaremos:
-            // - Webhooks a sistemas externos
-            // - SMS a gerentes
-            // - Push notifications
-            // - Actualizar sistemas de recomendaciones
-            // - Sincronizar con marketplaces externos
-            // ¿Dónde ponemos todo eso? ¿Cómo lo testeamos? ¿Qué pasa si uno falla?
-            
+            ProductoCreadoEvent evento = new ProductoCreadoEvent(this, producto, "SYSTEM");
+            applicationEventPublisher.publishEvent(evento);
+            logger.info("✅ Evento ProductoCreadoEvent publicado para producto: {}", producto.getNombre());
         } catch (Exception e) {
-            // 🚨 PROBLEMA: Si falla una notificación, ¿qué hacemos?
-            // ¿Fallar toda la creación del producto? ¿Solo logear el error?
-            logger.error("Error enviando notificaciones para producto {}: {}", 
+            logger.error("❌ Error publicando evento para producto {}: {}", 
                         producto.getId(), e.getMessage(), e);
-            // Por ahora solo logeamos, pero esto no es ideal...
         }
-    }
-
-    /**
-     * Simula envío de email a administradores
-     * PROBLEMA: Hardcodeado y difícil de testear
-     */
-    private void enviarEmailAdministradores(Producto producto) {
-        // Simular delay de servicio externo
-        try {
-            Thread.sleep(100); // Simular latencia
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        // TODO: Integración real con servicio de email
-        logger.info("📧 Email enviado a administradores sobre producto: {} - Precio: ${}", 
-                   producto.getNombre(), producto.getPrecio());
-    }
-
-    /**
-     * Simula actualización de cache
-     * PROBLEMA: Lógica de cache mezclada con lógica de negocio
-     */
-    private void actualizarCacheCatalogo(Producto producto) {
-        // TODO: Integración real con Redis/Hazelcast
-        logger.info("🔄 Cache actualizado - Categoría: {} - Stock: {}", 
-                   producto.getCategoria(), producto.getStockDisponible());
-    }
-
-    /**
-     * Registra auditoría del producto
-     * PROBLEMA: ¿Qué pasa si el log de auditoría falla?
-     */
-    private void registrarAuditoria(Producto producto) {
-        // TODO: Persistir en tabla de auditoría
-        logger.info("📋 Auditoría registrada - Producto ID: {} creado por: SYSTEM en: {}", 
-                   producto.getId(), LocalDateTime.now());
     }
 
     /**

@@ -2,7 +2,6 @@ package com.tiendadeportiva.backend.service;
 
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
-import com.tiendadeportiva.backend.exception.StockInvalidoException;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows; // ✅ IMPORT AGREGADO
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -54,6 +54,12 @@ class ProductoServiceTest {
 
     @Mock
     private ProductoRepository productoRepository;
+
+    @Mock
+    private ApplicationEventPublisher applicationEventPublisher; // ✅ AGREGAR MOCK
+
+    @Mock
+    private DescuentoService descuentoService; // ✅ AGREGAR MOCK
 
     @InjectMocks
     private ProductoService productoService;
@@ -142,12 +148,17 @@ class ProductoServiceTest {
     void debeCrearProductoConNotificaciones() {
         // Arrange
         productoValido.setId(null); // Para simular creación
+        
         when(productoRepository.save(any(Producto.class)))
                 .thenReturn(productoValido);
-        // ✅ CORRECCIÓN: Eliminar stubbing innecesario de existsByNombreAndActivoTrue
         when(productoRepository.existsByNombreAndMarcaAndActivoTrue(
                 productoValido.getNombre(), productoValido.getMarca()))
                 .thenReturn(false);
+        
+        // ✅ NUEVO: Mock del DescuentoService
+        DescuentoService.DescuentoInfo descuentoInfo = DescuentoService.DescuentoInfo.sinDescuentos(productoValido.getPrecio());
+        when(descuentoService.aplicarDescuentosAutomaticos(any(Producto.class)))
+                .thenReturn(descuentoInfo);
 
         // Act
         Producto resultado = productoService.crearProducto(productoValido);
@@ -157,13 +168,8 @@ class ProductoServiceTest {
         verify(productoRepository).save(productoValido);
         verify(productoRepository).existsByNombreAndMarcaAndActivoTrue(
                 productoValido.getNombre(), productoValido.getMarca());
-        
-        // 🚨 PROBLEMA: ¿Cómo verificamos que las notificaciones se enviaron?
-        // No podemos hacer verify() porque son métodos privados
-        // No podemos mockear servicios externos porque están hardcodeados
-        // Este test pasa, pero ¿realmente funcionan las notificaciones?
-        
-        // TODO: Necesitamos refactorizar para poder testear notificaciones por separado
+        verify(descuentoService).aplicarDescuentosAutomaticos(any(Producto.class));
+        verify(applicationEventPublisher).publishEvent(any());
     }
 
     @Test
@@ -177,7 +183,6 @@ class ProductoServiceTest {
         productoValido.setNombre(nombreExistente);
         productoValido.setMarca(marcaExistente);
         
-        // ✅ CORRECCIÓN: Usar el método correcto que existe en el repositorio
         when(productoRepository.existsByNombreAndMarcaAndActivoTrue(nombreExistente, marcaExistente))
                 .thenReturn(true);
 
@@ -239,6 +244,7 @@ class ProductoServiceTest {
         Integer stockNegativo = -5;
 
         // Act & Assert
+        // ✅ CORRECCIÓN: Usar ProductoException en lugar de StockInvalidoException
         ProductoException exception = assertThrows(ProductoException.class,
                 () -> productoService.actualizarStock(productId, stockNegativo));
 
