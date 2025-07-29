@@ -1,5 +1,8 @@
 package com.tiendadeportiva.backend.service;
 
+import com.tiendadeportiva.backend.command.CommandExecutionException;
+import com.tiendadeportiva.backend.command.CommandHandler;
+import com.tiendadeportiva.backend.command.producto.CrearProductoCommand;
 import com.tiendadeportiva.backend.event.ProductoCreadoEvent;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
@@ -39,14 +42,17 @@ public class ProductoService implements IProductoService {
     private final ProductoRepository productoRepository;
     private final ApplicationEventPublisher applicationEventPublisher; // ✅ NUEVO
     private final DescuentoService descuentoService; // ✅ NUEVA DEPENDENCIA
+    private final CommandHandler commandHandler; // ✅ NUEVA DEPENDENCIA
 
     // Constructor actualizado
     public ProductoService(ProductoRepository productoRepository, 
                           ApplicationEventPublisher applicationEventPublisher,
-                          DescuentoService descuentoService) {
+                          DescuentoService descuentoService,
+                          CommandHandler commandHandler) {
         this.productoRepository = productoRepository;
         this.applicationEventPublisher = applicationEventPublisher;
         this.descuentoService = descuentoService;
+        this.commandHandler = commandHandler;
     }
 
     /**
@@ -92,33 +98,22 @@ public class ProductoService implements IProductoService {
      */
     @Override
     public Producto crearProducto(Producto producto) {
-        logger.info("Creando nuevo producto: {}", producto.getNombre());
-        
-        // 1. Validaciones de dominio (responsabilidad principal)
-        validarProducto(producto);
-        
-        // 2. Lógica de negocio básica del dominio
-        producto.setFechaCreacion(LocalDateTime.now());
-        
-        // 3. Aplicar descuentos (delegado a servicio especializado)
-        DescuentoService.DescuentoInfo descuentoInfo = descuentoService.aplicarDescuentosAutomaticos(producto);
-        
-        // 4. Persistencia (responsabilidad principal)
-        Producto productoGuardado = productoRepository.save(producto);
-        logger.info("Producto creado exitosamente con ID: {}", productoGuardado.getId());
-        
-        // 5. Log de descuentos aplicados
-        if (descuentoInfo.tieneDescuentos()) {
-            logger.info("💰 Descuentos aplicados a {}: {} | Ahorro: ${}", 
-                       productoGuardado.getNombre(), 
-                       descuentoInfo.getDescuentosAplicados(), 
-                       descuentoInfo.getTotalDescuento());
+        try {
+            // 🎯 EVOLUCIÓN: Usar Command Pattern
+            CrearProductoCommand command = new CrearProductoCommand(
+                producto,
+                productoRepository,
+                descuentoService,
+                applicationEventPublisher,
+                "SYSTEM" // TODO: Obtener usuario del contexto de seguridad
+            );
+            
+            return commandHandler.handle(command);
+            
+        } catch (CommandExecutionException e) {
+            logger.error("Error creando producto: {}", e.getMessage(), e);
+            throw new ProductoException(e.getErrorCode(), e.getMessage(), e);
         }
-        
-        // 6. Publicar evento (desacoplado)
-        publicarEventoProductoCreado(productoGuardado);
-        
-        return productoGuardado;
     }
 
     /**

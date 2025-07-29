@@ -1,5 +1,7 @@
 package com.tiendadeportiva.backend.service;
 
+import com.tiendadeportiva.backend.command.CommandExecutionException; // ✅ IMPORT AGREGADO
+import com.tiendadeportiva.backend.command.CommandHandler;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
@@ -25,27 +27,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-/**
- * Tests unitarios para ProductoService.
- * 
- * Implementa las mejores prácticas de testing:
- * - Tests unitarios aislados usando mocks
- * - Naming descriptivo con @DisplayName
- * - AAA pattern (Arrange, Act, Assert)
- * - Testing de casos positivos y negativos
- * - Verificación de interacciones con mocks
- * - Uso de AssertJ para assertions más legibles
- * 
- * Estos tests sirven como:
- * - Documentación viva del comportamiento esperado
- * - Red de seguridad para refactorings
- * - Feedback rápido durante desarrollo
- * - Validación de principios SOLID
- * 
- * @author Equipo Desarrollo
- * @version 1.0
- * @since Fase 1 - Monolito Modular con SOLID
- */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ProductoService - Tests Unitarios")
 class ProductoServiceTest {
@@ -56,10 +37,13 @@ class ProductoServiceTest {
     private ProductoRepository productoRepository;
 
     @Mock
-    private ApplicationEventPublisher applicationEventPublisher; // ✅ AGREGAR MOCK
+    private ApplicationEventPublisher applicationEventPublisher;
 
     @Mock
-    private DescuentoService descuentoService; // ✅ AGREGAR MOCK
+    private DescuentoService descuentoService;
+
+    @Mock
+    private CommandHandler commandHandler;
 
     @InjectMocks
     private ProductoService productoService;
@@ -130,7 +114,7 @@ class ProductoServiceTest {
         Producto productoEliminado = new Producto();
         productoEliminado.setId(productId);
         productoEliminado.setNombre("Producto Eliminado");
-        productoEliminado.setActivo(false); // Producto eliminado (soft delete)
+        productoEliminado.setActivo(false);
         
         when(productoRepository.findById(productId))
             .thenReturn(Optional.of(productoEliminado));
@@ -144,58 +128,65 @@ class ProductoServiceTest {
     }
 
     @Test
-    @DisplayName("Debe crear producto correctamente CON notificaciones")
+    @DisplayName("Debe crear producto correctamente usando Command Pattern")
     void debeCrearProductoConNotificaciones() {
         // Arrange
-        productoValido.setId(null); // Para simular creación
+        productoValido.setId(null);
         
-        when(productoRepository.save(any(Producto.class)))
-                .thenReturn(productoValido);
-        when(productoRepository.existsByNombreAndMarcaAndActivoTrue(
-                productoValido.getNombre(), productoValido.getMarca()))
-                .thenReturn(false);
-        
-        // ✅ NUEVO: Mock del DescuentoService
-        DescuentoService.DescuentoInfo descuentoInfo = DescuentoService.DescuentoInfo.sinDescuentos(productoValido.getPrecio());
-        when(descuentoService.aplicarDescuentosAutomaticos(any(Producto.class)))
-                .thenReturn(descuentoInfo);
+        // ✅ CORRECCIÓN: Mock sin excepción checked
+        try {
+            when(commandHandler.handle(any())).thenReturn(productoValido);
+        } catch (CommandExecutionException e) {
+            // Este catch nunca se ejecutará en mocks, pero satisface al compilador
+            throw new RuntimeException(e);
+        }
 
         // Act
         Producto resultado = productoService.crearProducto(productoValido);
 
         // Assert
         assertThat(resultado).isNotNull();
-        verify(productoRepository).save(productoValido);
-        verify(productoRepository).existsByNombreAndMarcaAndActivoTrue(
-                productoValido.getNombre(), productoValido.getMarca());
-        verify(descuentoService).aplicarDescuentosAutomaticos(any(Producto.class));
-        verify(applicationEventPublisher).publishEvent(any());
+        assertThat(resultado.getNombre()).isEqualTo(productoValido.getNombre());
+        
+        try {
+            verify(commandHandler).handle(any());
+        } catch (CommandExecutionException e) {
+            throw new RuntimeException(e);
+        }
+        
+        logger.info("✅ Test actualizado: ProductoService usa Command Pattern correctamente");
     }
 
     @Test
-    @DisplayName("Debe lanzar excepción cuando producto ya existe (por nombre y marca)")
-    void debeLanzarExcepcionCuandoProductoYaExiste() {
+    @DisplayName("Debe lanzar excepción cuando comando falla")
+    void debeLanzarExcepcionCuandoComandoFalla() {
         // Arrange
-        String nombreExistente = "Camiseta Deportiva";
-        String marcaExistente = "Nike";
+        productoValido.setId(null);
         
-        productoValido.setId(null); // Simular producto nuevo
-        productoValido.setNombre(nombreExistente);
-        productoValido.setMarca(marcaExistente);
-        
-        when(productoRepository.existsByNombreAndMarcaAndActivoTrue(nombreExistente, marcaExistente))
-                .thenReturn(true);
+        // ✅ CORRECCIÓN: Mock para lanzar excepción
+        try {
+            when(commandHandler.handle(any()))
+                    .thenThrow(new CommandExecutionException(
+                        "CrearProductoCommand", 
+                        "PRODUCTO_DUPLICADO", 
+                        "Producto ya existe"
+                    ));
+        } catch (CommandExecutionException e) {
+            throw new RuntimeException(e);
+        }
 
         // Act & Assert
         ProductoException exception = assertThrows(ProductoException.class, 
                 () -> productoService.crearProducto(productoValido));
         
         assertThat(exception.getCodigo()).isEqualTo("PRODUCTO_DUPLICADO");
-        assertThat(exception.getMessage()).contains(nombreExistente);
-        assertThat(exception.getMessage()).contains(marcaExistente);
+        assertThat(exception.getMessage()).contains("Producto ya existe");
         
-        // Verificar que no se intentó guardar
-        verify(productoRepository, never()).save(any());
+        try {
+            verify(commandHandler).handle(any());
+        } catch (CommandExecutionException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test
@@ -244,14 +235,12 @@ class ProductoServiceTest {
         Integer stockNegativo = -5;
 
         // Act & Assert
-        // ✅ CORRECCIÓN: Usar ProductoException en lugar de StockInvalidoException
         ProductoException exception = assertThrows(ProductoException.class,
                 () -> productoService.actualizarStock(productId, stockNegativo));
 
         assertThat(exception.getCodigo()).isEqualTo("STOCK_INVALIDO");
         assertThat(exception.getMessage()).contains("negativo");
         
-        // Verificar que no se accedió al repositorio
         verify(productoRepository, never()).findById(any());
         verify(productoRepository, never()).save(any());
     }
@@ -272,5 +261,68 @@ class ProductoServiceTest {
 
         verify(productoRepository).findById(productIdInexistente);
         verify(productoRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Debe buscar productos por categoría correctamente")
+    void debeBuscarProductosPorCategoria() {
+        // Arrange
+        String categoria = "Camisetas";
+        List<Producto> productosEsperados = List.of(productoValido);
+        when(productoRepository.findByCategoriaAndActivoTrue(categoria))
+                .thenReturn(productosEsperados);
+
+        // Act
+        List<Producto> productosObtenidos = productoService.buscarPorCategoria(categoria);
+
+        // Assert
+        assertThat(productosObtenidos)
+                .isNotNull()
+                .hasSize(1)
+                .containsExactly(productoValido);
+        
+        verify(productoRepository).findByCategoriaAndActivoTrue(categoria);
+    }
+
+    @Test
+    @DisplayName("Debe buscar productos por marca correctamente")
+    void debeBuscarProductosPorMarca() {
+        // Arrange
+        String marca = "Nike";
+        List<Producto> productosEsperados = List.of(productoValido);
+        when(productoRepository.findByMarcaAndActivoTrue(marca))
+                .thenReturn(productosEsperados);
+
+        // Act
+        List<Producto> productosObtenidos = productoService.buscarPorMarca(marca);
+
+        // Assert
+        assertThat(productosObtenidos)
+                .isNotNull()
+                .hasSize(1)
+                .containsExactly(productoValido);
+        
+        verify(productoRepository).findByMarcaAndActivoTrue(marca);
+    }
+
+    @Test
+    @DisplayName("Debe buscar productos por nombre correctamente")
+    void debeBuscarProductosPorNombre() {
+        // Arrange
+        String nombre = "Camiseta";
+        List<Producto> productosEsperados = List.of(productoValido);
+        when(productoRepository.findByNombreContainingIgnoreCaseAndActivoTrue(nombre))
+                .thenReturn(productosEsperados);
+
+        // Act
+        List<Producto> productosObtenidos = productoService.buscarPorNombre(nombre);
+
+        // Assert
+        assertThat(productosObtenidos)
+                .isNotNull()
+                .hasSize(1)
+                .containsExactly(productoValido);
+        
+        verify(productoRepository).findByNombreContainingIgnoreCaseAndActivoTrue(nombre);
     }
 }

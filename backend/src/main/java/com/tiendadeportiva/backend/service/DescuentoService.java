@@ -144,7 +144,6 @@ public class DescuentoService {
             return new DescuentoInfo(precio, precio, "", BigDecimal.ZERO);
         }
         
-        // Getters...
         public BigDecimal getPrecioOriginal() { return precioOriginal; }
         public BigDecimal getPrecioFinal() { return precioFinal; }
         public String getDescuentosAplicados() { return descuentosAplicados; }
