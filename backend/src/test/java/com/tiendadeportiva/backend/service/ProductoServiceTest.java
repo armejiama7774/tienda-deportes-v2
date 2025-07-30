@@ -325,4 +325,58 @@ class ProductoServiceTest {
         
         verify(productoRepository).findByNombreContainingIgnoreCaseAndActivoTrue(nombre);
     }
+
+    @Test
+    @DisplayName("Debe actualizar producto correctamente usando Command Pattern")
+    void debeActualizarProductoCorrectamente() {
+        // Arrange
+        Long productoId = 1L;
+        Producto datosActualizacion = new Producto();
+        datosActualizacion.setNombre("Nombre Actualizado");
+        datosActualizacion.setPrecio(new BigDecimal("39.99"));
+        
+        try {
+            when(commandHandler.handle(any())).thenReturn(productoValido);
+        } catch (CommandExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        // Act
+        Optional<Producto> resultado = productoService.actualizarProducto(productoId, datosActualizacion);
+
+        // Assert
+        assertThat(resultado).isPresent();
+        assertThat(resultado.get().getNombre()).isEqualTo(productoValido.getNombre());
+        
+        try {
+            verify(commandHandler).handle(any());
+        } catch (CommandExecutionException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    @DisplayName("Debe eliminar producto correctamente usando Command Pattern")
+    void debeEliminarProductoCorrectamente() {
+        // Arrange
+        Long productoId = 1L;
+        
+        try {
+            when(commandHandler.handle(any())).thenReturn(true);
+        } catch (CommandExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        // Act
+        boolean resultado = productoService.eliminarProducto(productoId);
+
+        // Assert
+        assertThat(resultado).isTrue();
+        
+        try {
+            verify(commandHandler).handle(any());
+        } catch (CommandExecutionException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

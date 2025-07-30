@@ -42,3 +42,28 @@ public interface Command<T> {
      */
     String getDescription();
 }
+/*
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ProductoController│────▶│ ProductoService │────▶│Command<Producto>│
+│    (CLIENT)     │     │   (INVOKER)     │     │  <<interface>>  │
+│                 │     │                 │     │                 │
+│ + crearProducto │     │ + crearProducto │     │ + execute()     │
+│   (RequestBody) │     │ - Crea comando  │     │ + undo()        │
+│                 │     │ - Solicita exec │     │ + isValid()     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+         │                       │                       △
+         │                       │                       │
+         │                       │                       │
+         │                       ▼               ┌───────────────────┐
+         │               ┌──────────────┐        │CrearProductoCommand│
+         │               │CommandHandler│◀───────│ (CONCRETE COMMAND) │
+         │               │ (RECEIVER)   │        │                   │
+         └──────────────▶│              │        │ - producto        │
+                         │ + handle()   │        │ - repository      │
+                         │ + handleAsync│        │ - eventPublisher  │
+                         │ - logging    │        │ + execute()       │
+                         │ - metrics    │        │ + undo()          │
+                         │ - validation │        │ + isValid()       │
+                         └──────────────┘        └───────────────────┘
+*/
+

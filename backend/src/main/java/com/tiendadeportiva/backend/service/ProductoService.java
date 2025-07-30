@@ -3,6 +3,8 @@ package com.tiendadeportiva.backend.service;
 import com.tiendadeportiva.backend.command.CommandExecutionException;
 import com.tiendadeportiva.backend.command.CommandHandler;
 import com.tiendadeportiva.backend.command.producto.CrearProductoCommand;
+import com.tiendadeportiva.backend.command.producto.ActualizarProductoCommand;
+import com.tiendadeportiva.backend.command.producto.EliminarProductoCommand;
 import com.tiendadeportiva.backend.event.ProductoCreadoEvent;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
@@ -94,18 +96,21 @@ public class ProductoService implements IProductoService {
 
     /**
      * Crea un nuevo producto
-     * EVOLUCIÓN COMPLETADA: ProductoService realmente limpio y enfocado
+     * EVOLUCIÓN COMPLETADA: ProductoService usando Command Pattern completo
+     * 
+     * - Todas las operaciones CUD delegadas a comandos especializados
+     * - Solo operaciones de lectura (queries) permanecen aquí
+     * - Preparación para separación Query/Command (CQRS)
      */
     @Override
     public Producto crearProducto(Producto producto) {
         try {
-            // 🎯 EVOLUCIÓN: Usar Command Pattern
             CrearProductoCommand command = new CrearProductoCommand(
                 producto,
                 productoRepository,
                 descuentoService,
                 applicationEventPublisher,
-                "SYSTEM" // TODO: Obtener usuario del contexto de seguridad
+                obtenerUsuarioActual()
             );
             
             return commandHandler.handle(command);
@@ -133,44 +138,65 @@ public class ProductoService implements IProductoService {
     /**
      * Actualiza un producto existente
      */
+    @Override
     public Optional<Producto> actualizarProducto(Long id, Producto productoActualizado) {
-        logger.info("Actualizando producto con ID: {}", id);
-        
-        return productoRepository.findById(id)
-                .map(producto -> {
-                    // Actualizar campos
-                    producto.setNombre(productoActualizado.getNombre());
-                    producto.setDescripcion(productoActualizado.getDescripcion());
-                    producto.setPrecio(productoActualizado.getPrecio());
-                    producto.setCategoria(productoActualizado.getCategoria());
-                    producto.setMarca(productoActualizado.getMarca());
-                    producto.setStockDisponible(productoActualizado.getStockDisponible());
-                    producto.setImagenUrl(productoActualizado.getImagenUrl());
-                    
-                    // Validar antes de guardar
-                    validarProducto(producto);
-                    
-                    Producto guardado = productoRepository.save(producto);
-                    logger.info("Producto actualizado exitosamente: {}", guardado.getId());
-                    
-                    return guardado;
-                });
+        try {
+            ActualizarProductoCommand command = new ActualizarProductoCommand(
+                id,
+                productoActualizado,
+                productoRepository,
+                descuentoService,
+                applicationEventPublisher,
+                obtenerUsuarioActual()
+            );
+            
+            Producto resultado = commandHandler.handle(command);
+            return Optional.of(resultado);
+            
+        } catch (CommandExecutionException e) {
+            logger.error("Error actualizando producto {}: {}", id, e.getMessage(), e);
+            
+            if ("PRODUCTO_NO_ENCONTRADO".equals(e.getErrorCode())) {
+                return Optional.empty();
+            }
+            
+            throw new ProductoException(e.getErrorCode(), e.getMessage(), e);
+        }
     }
 
     /**
      * Elimina un producto (soft delete)
      */
+    @Override
     public boolean eliminarProducto(Long id) {
-        logger.info("Eliminando producto con ID: {}", id);
-        
-        return productoRepository.findById(id)
-                .map(producto -> {
-                    producto.setActivo(false);
-                    productoRepository.save(producto);
-                    logger.info("Producto eliminado exitosamente: {}", id);
-                    return true;
-                })
-                .orElse(false);
+        try {
+            EliminarProductoCommand command = new EliminarProductoCommand(
+                id,
+                productoRepository,
+                applicationEventPublisher,
+                obtenerUsuarioActual()
+            );
+            
+            return commandHandler.handle(command);
+            
+        } catch (CommandExecutionException e) {
+            logger.error("Error eliminando producto {}: {}", id, e.getMessage(), e);
+            
+            if ("PRODUCTO_NO_ENCONTRADO".equals(e.getErrorCode())) {
+                return false;
+            }
+            
+            throw new ProductoException(e.getErrorCode(), e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Obtiene el usuario actual del contexto de seguridad
+     * TODO: Integrar con Spring Security cuando se implemente autenticación
+     */
+    private String obtenerUsuarioActual() {
+        // TODO: Implementar cuando tengamos autenticación
+        return "SYSTEM";
     }
 
     /**
