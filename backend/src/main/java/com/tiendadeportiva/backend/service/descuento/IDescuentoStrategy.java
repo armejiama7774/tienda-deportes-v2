@@ -4,32 +4,29 @@ import com.tiendadeportiva.backend.model.Producto;
 import java.math.BigDecimal;
 
 /**
- * Strategy Pattern para cálculo de descuentos.
+ * Interface para estrategias de descuento.
  * 
- * PATRÓN DE DISEÑO: Strategy
+ * FASE 2: ARQUITECTURA HEXAGONAL - STRATEGY PATTERN
  * 
- * ¿POR QUÉ STRATEGY PATTERN?
- * - Permite definir una familia de algoritmos de descuento
- * - Hace que sean intercambiables en tiempo de ejecución
- * - Elimina condicionales complejas (if/else, switch)
- * - Facilita testing individual de cada estrategia
- * - Cumple con Open/Closed Principle (SOLID)
+ * PATRÓN DE DISEÑO: Strategy Pattern
+ * - Define el contrato común para todas las estrategias de descuento
+ * - Permite intercambiar algoritmos de descuento dinámicamente
+ * - Facilita la extensión sin modificar código existente (Open/Closed Principle)
  * 
  * CASOS DE USO PROFESIONALES:
- * - Sistemas de descuentos en e-commerce
- * - Cálculo de impuestos por región
- * - Algoritmos de pricing dinámico
- * - Métodos de pago diferentes
- * - Estrategias de envío
+ * - Descuentos por temporada (Black Friday, rebajas de verano)
+ * - Descuentos por volumen de compra
+ * - Descuentos por tipo de cliente (VIP, estudiante, empleado)
+ * - Descuentos por categoría de producto
  * 
- * BENEFICIOS PARA JUNIOR DEVELOPERS:
- * - Código más limpio y mantenible
- * - Fácil agregar nuevos tipos de descuento
- * - Testing simplificado
- * - Separación clara de responsabilidades
+ * BENEFICIOS PARA JUNIORS:
+ * - Ejemplo claro de Strategy Pattern en acción
+ * - Separación de responsabilidades (cada descuento es independiente)
+ * - Fácil testing (cada estrategia se prueba por separado)
+ * - Extensibilidad sin romper código existente
  * 
  * @author Equipo Desarrollo
- * @version 2.1
+ * @version 2.1.0
  * @since Fase 2 - Mejoras con Patrones de Diseño
  */
 public interface IDescuentoStrategy {
@@ -37,36 +34,48 @@ public interface IDescuentoStrategy {
     /**
      * Calcula el descuento aplicable a un producto.
      * 
+     * IMPORTANTE: 
+     * - Retorna BigDecimal.ZERO si no aplica descuento
+     * - El valor retornado es el MONTO del descuento, no el precio final
+     * - Usar MonetaryUtils para operaciones monetarias precisas
+     * 
      * @param producto El producto al que se aplicará el descuento
-     * @param contexto Información adicional para el cálculo (temporada, usuario, etc.)
-     * @return Monto del descuento a aplicar
+     * @param cantidad Cantidad de productos (para descuentos por volumen)
+     * @return Monto del descuento a aplicar (cero si no aplica)
      */
-    BigDecimal calcularDescuento(Producto producto, DescuentoContexto contexto);
+    BigDecimal calcularDescuento(Producto producto, Integer cantidad);
     
     /**
-     * Determina si esta estrategia es aplicable al producto y contexto dados.
+     * Verifica si esta estrategia es aplicable al producto dado.
+     * 
+     * PROPÓSITO: Optimización - evitar cálculos innecesarios
+     * Solo se calculará el descuento si esta validación retorna true.
      * 
      * @param producto El producto a evaluar
-     * @param contexto El contexto de descuento
-     * @return true si la estrategia es aplicable, false en caso contrario
+     * @param cantidad Cantidad de productos
+     * @return true si la estrategia puede aplicar descuento, false si no
      */
-    boolean esAplicable(Producto producto, DescuentoContexto contexto);
+    boolean esAplicable(Producto producto, Integer cantidad);
     
     /**
      * Obtiene el nombre descriptivo de la estrategia.
-     * Útil para logging y debugging.
+     * Útil para logging, auditoría y mostrar al usuario qué descuento se aplicó.
      * 
-     * @return Nombre de la estrategia
+     * @return Nombre legible de la estrategia (ej: "Descuento por Temporada")
      */
     String getNombreEstrategia();
     
     /**
      * Obtiene la prioridad de la estrategia.
-     * Las estrategias con mayor prioridad se evalúan primero.
+     * Usado cuando múltiples estrategias son aplicables.
      * 
-     * @return Prioridad (mayor número = mayor prioridad)
+     * CONVENCIÓN: Mayor número = mayor prioridad
+     * - 1-3: Descuentos básicos (categoría, stock)
+     * - 4-6: Descuentos estacionales
+     * - 7-9: Descuentos por volumen
+     * - 10+: Descuentos especiales (VIP, empleados)
+     * 
+     * @return Prioridad numérica de la estrategia
      */
-    default int getPrioridad() {
-        return 0;
-    }
+    int getPrioridad();
 }
