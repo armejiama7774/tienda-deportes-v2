@@ -14,7 +14,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -27,31 +26,35 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
  * Tests de integración para ProductoController.
  * 
- * Implementa testing de la capa web usando @WebMvcTest:
- * - Tests del comportamiento HTTP completo
- * - Validación de responses JSON
- * - Testing de manejo de errores HTTP
- * - Validación de códigos de estado
- * - Tests de serialización/deserialización
+ * EVOLUCIÓN ARQUITECTÓNICA - Fase 2: Arquitectura Hexagonal
+ * - Testing completo de la capa web usando @WebMvcTest
+ * - Validación de responses JSON estructuradas
+ * - Testing de manejo de errores HTTP centralizado
+ * - Validación de códigos de estado semánticamente correctos
+ * - Tests de serialización/deserialización robustos
+ * - Siguiendo Google Java Style Guide y Conventional Commits
  * 
- * Estos tests validan:
- * - Integración correcta entre controller y service
- * - Manejo adecuado de excepciones
- * - Formateo correcto de respuestas HTTP
- * - Aplicación correcta de validaciones
+ * Cobertura de testing:
+ * ✅ Operaciones CRUD completas
+ * ✅ Manejo de errores con GlobalExceptionHandler
+ * ✅ Validaciones de Bean Validation
+ * ✅ Búsquedas y filtros avanzados
+ * ✅ Respuestas HTTP semánticamente correctas
+ * ✅ Testing robusto preparado para evolución a microservicios
  * 
  * @author Equipo Desarrollo
- * @version 1.0
- * @since Fase 1 - Monolito Modular con SOLID
+ * @version 2.0
+ * @since Fase 2 - Arquitectura Hexagonal
  */
 @WebMvcTest(controllers = ProductoController.class)
 @Import(TestSecurityConfig.class)
-@DisplayName("ProductoController - Tests de Integración")
+@DisplayName("ProductoController - Tests de Integración Arquitectura Hexagonal")
 class ProductoControllerTest {
 
     @Autowired
@@ -64,29 +67,23 @@ class ProductoControllerTest {
     private ObjectMapper objectMapper;
 
     private Producto productoValido;
-    private Producto productoInvalido;
 
     @BeforeEach
     void setUp() {
         productoValido = new Producto();
         productoValido.setId(1L);
-        productoValido.setNombre("Camiseta Deportiva");
-        productoValido.setDescripcion("Camiseta para running");
-        productoValido.setPrecio(new BigDecimal("25.99"));
+        productoValido.setNombre("Camiseta Deportiva Nike");
+        productoValido.setDescripcion("Camiseta de alta tecnología para running con tecnología Dri-FIT");
+        productoValido.setPrecio(new BigDecimal("29.99"));
         productoValido.setCategoria("Camisetas");
         productoValido.setMarca("Nike");
-        productoValido.setStockDisponible(10);
-        productoValido.setActivo(true);
-
-        productoInvalido = new Producto();
-        // Nombre vacío para disparar validación
-        productoInvalido.setNombre("");
-        productoInvalido.setDescripcion("Descripción");
-        productoInvalido.setPrecio(new BigDecimal("25.99"));
-        productoInvalido.setCategoria("Camisetas");
-        productoInvalido.setMarca("Nike");
-        productoInvalido.setStockDisponible(10);
+        productoValido.setStockDisponible(15);
+        productoValido.setActivo(Boolean.TRUE); // ✅ Boolean wrapper según convenciones del proyecto
     }
+
+    // =============================================
+    // TESTS DE QUERIES (OPERACIONES DE LECTURA)
+    // =============================================
 
     @Test
     @DisplayName("GET /api/productos - Debe retornar lista de productos con HTTP 200")
@@ -101,9 +98,9 @@ class ProductoControllerTest {
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(jsonPath("$[0].id", is(1)))
-                .andExpect(jsonPath("$[0].nombre", is("Camiseta Deportiva")))
-                .andExpect(jsonPath("$[0].precio", is(25.99)))
-                .andExpect(jsonPath("$[0].marca", is("Nike")));
+                .andExpect(jsonPath("$[0].nombre", is("Camiseta Deportiva Nike")))
+                .andExpect(jsonPath("$[0].precio", is(29.99)))
+                .andExpect(jsonPath("$[0].marca", is("Nike"))); // ✅ CORRECCIÓN: andExpect()
 
         verify(productoService).obtenerTodosLosProductos();
     }
@@ -121,7 +118,7 @@ class ProductoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id", is(1)))
-                .andExpect(jsonPath("$.nombre", is("Camiseta Deportiva")))
+                .andExpect(jsonPath("$.nombre", is("Camiseta Deportiva Nike")))
                 .andExpect(jsonPath("$.marca", is("Nike")));
 
         verify(productoService).obtenerProductoPorId(productId);
@@ -142,6 +139,10 @@ class ProductoControllerTest {
         verify(productoService).obtenerProductoPorId(productId);
     }
 
+    // =============================================
+    // TESTS DE COMMANDS (OPERACIONES DE ESCRITURA)
+    // =============================================
+
     @Test
     @DisplayName("POST /api/productos - Debe crear producto válido con HTTP 201")
     void debeCrearProductoValidoConHttp201() throws Exception {
@@ -156,21 +157,64 @@ class ProductoControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id", is(1)))
-                .andExpect(jsonPath("$.nombre", is("Camiseta Deportiva")));
+                .andExpect(jsonPath("$.nombre", is("Camiseta Deportiva Nike"))); // ✅ CORRECCIÓN: andExpect()
 
         verify(productoService).crearProducto(any(Producto.class));
     }
 
     @Test
-    @DisplayName("POST /api/productos - Debe retornar HTTP 400 con datos inválidos")
-    void debeRetornar400ConDatosInvalidos() throws Exception {
+    @DisplayName("POST /api/productos - Debe retornar HTTP 400 con datos inválidos por Bean Validation")
+    void debeRetornar400ConDatosInvalidosPorBeanValidation() throws Exception {
+        // ✅ Datos claramente inválidos para activar Bean Validation
+        String productoConDatosInvalidos = """
+            {
+                "nombre": "",
+                "precio": -10.50,
+                "categoria": "",
+                "marca": "",
+                "stockDisponible": -5
+            }
+            """;
+        
         // Act & Assert
         mockMvc.perform(post("/api/productos")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(productoInvalido)))
-                .andExpect(status().isBadRequest());
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(productoConDatosInvalidos))
+                .andDo(print()) // ✅ Debugging output
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors").exists())
+                .andExpect(jsonPath("$.fieldErrors.nombre").exists())
+                .andExpect(jsonPath("$.fieldErrors.precio").exists())
+                .andExpect(jsonPath("$.fieldErrors.categoria").exists()); // ✅ CORRECCIÓN: andExpect()
+        
+        // Verificar que el servicio NO fue llamado debido a validación fallida
+        verify(productoService, never()).crearProducto(any(Producto.class));
+    }
 
-        verify(productoService, never()).crearProducto(any());
+    @Test
+    @DisplayName("POST /api/productos - Debe retornar HTTP 400 con errores específicos por campo")
+    void debeRetornarErroresEspecificosPorCampoInvalido() throws Exception {
+        String productoConPrecioNegativo = """
+            {
+                "nombre": "Producto Test Válido",
+                "descripcion": "Descripción válida del producto",
+                "precio": -5.00,
+                "categoria": "Camisetas",
+                "marca": "Nike",
+                "stockDisponible": 10
+            }
+            """;
+    
+        // Act & Assert
+        mockMvc.perform(post("/api/productos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(productoConPrecioNegativo))
+                .andDo(print()) // ✅ Debugging output
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fieldErrors.precio").value(containsString("mayor que 0"))); // ✅ CORRECCIÓN: andExpect()
+        
+        verify(productoService, never()).crearProducto(any(Producto.class));
     }
 
     @Test
@@ -184,24 +228,26 @@ class ProductoControllerTest {
         mockMvc.perform(post("/api/productos")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(productoValido)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("PRECIO_INVALIDO"))
+                .andExpect(jsonPath("$.message").value("El precio debe ser mayor que 0"));
 
         verify(productoService).crearProducto(any(Producto.class));
     }
 
     @Test
-    @DisplayName("PUT /api/productos/{id} - Debe actualizar producto existente")
+    @DisplayName("PUT /api/productos/{id} - Debe actualizar producto existente con HTTP 200")
     void debeActualizarProductoExistente() throws Exception {
         // Arrange
         Long productId = 1L;
         Producto productoActualizado = new Producto();
         productoActualizado.setId(productId);
-        productoActualizado.setNombre("Camiseta Actualizada");
-        productoActualizado.setDescripcion("Nueva descripción");
-        productoActualizado.setPrecio(new BigDecimal("29.99"));
+        productoActualizado.setNombre("Camiseta Adidas Actualizada");
+        productoActualizado.setDescripcion("Nueva descripción con tecnología Climacool");
+        productoActualizado.setPrecio(new BigDecimal("34.99"));
         productoActualizado.setCategoria("Camisetas");
         productoActualizado.setMarca("Adidas");
-        productoActualizado.setStockDisponible(15);
+        productoActualizado.setStockDisponible(20);
 
         when(productoService.actualizarProducto(eq(productId), any(Producto.class)))
                 .thenReturn(Optional.of(productoActualizado));
@@ -213,10 +259,24 @@ class ProductoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.id", is(1)))
-                .andExpect(jsonPath("$.nombre", is("Camiseta Actualizada")))
-                .andExpect(jsonPath("$.marca", is("Adidas")));
+                .andExpect(jsonPath("$.nombre", is("Camiseta Adidas Actualizada")))
+                .andExpect(jsonPath("$.marca", is("Adidas"))); // ✅ CORRECCIÓN: andExpect()
 
         verify(productoService).actualizarProducto(eq(productId), any(Producto.class));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/productos/{id} - Debe eliminar producto existente con HTTP 204")
+    void debeEliminarProductoExistente() throws Exception {
+        // Arrange
+        Long productId = 1L;
+        when(productoService.eliminarProducto(productId)).thenReturn(true);
+
+        // Act & Assert
+        mockMvc.perform(delete("/api/productos/{id}", productId))
+                .andExpect(status().isNoContent());
+
+        verify(productoService).eliminarProducto(productId);
     }
 
     @Test
@@ -231,7 +291,7 @@ class ProductoControllerTest {
         // Act & Assert
         mockMvc.perform(patch("/api/productos/{id}/stock", productId)
                         .param("stock", nuevoStock.toString()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk()); // ✅ CORRECCIÓN FINAL: andExpect() en lugar de andExpected()
 
         verify(productoService).actualizarStock(productId, nuevoStock);
     }
@@ -248,7 +308,8 @@ class ProductoControllerTest {
         // Act & Assert
         mockMvc.perform(patch("/api/productos/{id}/stock", productId)
                         .param("stock", nuevoStock.toString()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorCode").value("PRODUCTO_NO_ENCONTRADO"));
 
         verify(productoService).actualizarStock(productId, nuevoStock);
     }
@@ -265,10 +326,15 @@ class ProductoControllerTest {
         // Act & Assert
         mockMvc.perform(patch("/api/productos/{id}/stock", productId)
                         .param("stock", stockInvalido.toString()))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("STOCK_INVALIDO"));
 
         verify(productoService).actualizarStock(productId, stockInvalido);
     }
+
+    // =============================================
+    // TESTS DE BÚSQUEDAS Y FILTROS
+    // =============================================
 
     @Test
     @DisplayName("GET /api/productos/categoria/{categoria} - Debe buscar por categoría")
@@ -283,9 +349,27 @@ class ProductoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].categoria", is(categoria)));
+                .andExpect(jsonPath("$[0].categoria", is(categoria))); // ✅ CORRECCIÓN: andExpect()
 
         verify(productoService).buscarPorCategoria(categoria);
+    }
+
+    @Test
+    @DisplayName("GET /api/productos/marca/{marca} - Debe buscar por marca")
+    void debeBuscarPorMarca() throws Exception {
+        // Arrange
+        String marca = "Nike";
+        List<Producto> productos = Arrays.asList(productoValido);
+        when(productoService.buscarPorMarca(marca)).thenReturn(productos);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/productos/marca/{marca}", marca))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].marca", is(marca))); // ✅ CORRECCIÓN: andExpect()
+
+        verify(productoService).buscarPorMarca(marca);
     }
 
     @Test
@@ -301,8 +385,80 @@ class ProductoControllerTest {
                         .param("nombre", nombre))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$", hasSize(1)));
+                .andExpect(jsonPath("$", hasSize(1))); // ✅ CORRECCIÓN: andExpect()
 
         verify(productoService).buscarPorNombre(nombre);
+    }
+
+    @Test
+    @DisplayName("GET /api/productos/precio?min=x&max=y - Debe buscar por rango de precios")
+    void debeBuscarPorRangoDePrecios() throws Exception {
+        // Arrange
+        BigDecimal precioMin = new BigDecimal("20.00");
+        BigDecimal precioMax = new BigDecimal("50.00");
+        List<Producto> productos = Arrays.asList(productoValido);
+        when(productoService.buscarPorRangoPrecios(precioMin, precioMax)).thenReturn(productos);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/productos/precio")
+                        .param("min", precioMin.toString())
+                        .param("max", precioMax.toString()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(1))); // ✅ CORRECCIÓN: andExpect()
+
+        verify(productoService).buscarPorRangoPrecios(precioMin, precioMax);
+    }
+
+    @Test
+    @DisplayName("GET /api/productos/con-stock - Debe obtener productos con stock disponible")
+    void debeObtenerProductosConStock() throws Exception {
+        // Arrange
+        List<Producto> productos = Arrays.asList(productoValido);
+        when(productoService.obtenerProductosConStock()).thenReturn(productos);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/productos/con-stock"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(1))); // ✅ CORRECCIÓN: andExpect()
+
+        verify(productoService).obtenerProductosConStock();
+    }
+
+    // =============================================
+    // TESTS DE METADATOS DEL CATÁLOGO
+    // =============================================
+
+    @Test
+    @DisplayName("GET /api/productos/categorias - Debe obtener todas las categorías")
+    void debeObtenerTodasLasCategorias() throws Exception {
+        // Arrange
+        List<String> categorias = Arrays.asList("Camisetas", "Shorts", "Zapatillas");
+        when(productoService.obtenerCategorias()).thenReturn(categorias);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/productos/categorias"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(3))); // ✅ CORRECCIÓN: andExpect()
+
+        verify(productoService).obtenerCategorias();
+    }
+
+    @Test
+    @DisplayName("GET /api/productos/marcas - Debe obtener todas las marcas")
+    void debeObtenerTodasLasMarcas() throws Exception {
+        // Arrange
+        List<String> marcas = Arrays.asList("Nike", "Adidas", "Puma");
+        when(productoService.obtenerMarcas()).thenReturn(marcas);
+
+        // Act & Assert
+        mockMvc.perform(get("/api/productos/marcas"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$", hasSize(3))); // ✅ CORRECCIÓN: andExpect()
+
+        verify(productoService).obtenerMarcas();
     }
 }

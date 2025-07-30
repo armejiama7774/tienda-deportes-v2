@@ -60,7 +60,7 @@ class ProductoServiceTest {
         productoValido.setCategoria("Camisetas");
         productoValido.setMarca("Nike");
         productoValido.setStockDisponible(10);
-        productoValido.setActivo(true);
+        productoValido.setActivo(Boolean.TRUE); // ✅ CORRECCIÓN: Boolean wrapper
         productoValido.setFechaCreacion(LocalDateTime.now());
     }
 
@@ -90,7 +90,7 @@ class ProductoServiceTest {
         // Arrange
         Long productId = 1L;
         productoValido.setId(productId);
-        productoValido.setActivo(true);
+        productoValido.setActivo(Boolean.TRUE); // ✅ CORRECCIÓN: Boolean wrapper
         
         when(productoRepository.findById(productId))
                 .thenReturn(Optional.of(productoValido));
@@ -114,10 +114,10 @@ class ProductoServiceTest {
         Producto productoEliminado = new Producto();
         productoEliminado.setId(productId);
         productoEliminado.setNombre("Producto Eliminado");
-        productoEliminado.setActivo(false);
+        productoEliminado.setActivo(Boolean.FALSE); // ✅ CORRECCIÓN: Boolean wrapper
         
         when(productoRepository.findById(productId))
-            .thenReturn(Optional.of(productoEliminado));
+        .thenReturn(Optional.of(productoEliminado));
         
         // Act
         Optional<Producto> resultado = productoService.obtenerProductoPorId(productId);

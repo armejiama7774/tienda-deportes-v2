@@ -13,34 +13,133 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * Controlador REST para la gestión de productos aplicando principios SOLID.
  * 
- * Mejoras implementadas:
+ * EVOLUCIÓN ARQUITECTÓNICA - Fase 2: Arquitectura Hexagonal
  * - Dependency Inversion Principle: Depende de IProductoService (abstracción)
- * - Manejo robusto de excepciones personalizadas
- * - Logging detallado para auditoría y debugging
+ * - Manejo de errores delegado a GlobalExceptionHandler (SRP)
+ * - Logging estructurado para observabilidad
  * - Respuestas HTTP semánticamente correctas
- * - Documentación completa de endpoints
+ * - Documentación completa siguiendo Google Java Style Guide
  * 
  * @author Equipo Desarrollo
- * @version 1.0
- * @since Fase 1 - Monolito Modular con SOLID
+ * @version 2.0
+ * @since Fase 2 - Arquitectura Hexagonal
  */
 @RestController
 @RequestMapping("/api/productos")
-@CrossOrigin(origins = "http://localhost:3000") // Para permitir conexiones desde React
+@CrossOrigin(origins = "http://localhost:3000")
 public class ProductoController {
 
     private static final Logger logger = LoggerFactory.getLogger(ProductoController.class);
-
     private final IProductoService productoService;
 
     public ProductoController(IProductoService productoService) {
         this.productoService = productoService;
     }
+
+    // =============================================
+    // COMANDOS (OPERACIONES DE ESCRITURA)
+    // =============================================
+
+    /**
+     * Crea un nuevo producto
+     * POST /api/productos
+     * 
+     * ARQUITECTURA HEXAGONAL:
+     * - Controller → Service → Commands → Ports → Adapters
+     * - Manejo de errores centralizado en GlobalExceptionHandler
+     * - Logging estructurado para observabilidad
+     * 
+     * @param producto Datos del producto a crear (validado con @Valid)
+     * @return Producto creado con HTTP 201
+     * @throws ProductoException Si hay errores de validación o negocio
+     */
+    @PostMapping
+    public ResponseEntity<Producto> crearProducto(@Valid @RequestBody Producto producto) {
+        logger.info("🚀 Petición recibida: POST /api/productos - {}", producto.getNombre());
+        
+        // ✅ ARQUITECTURA HEXAGONAL: Delegación simple al servicio
+        // Los errores son manejados por GlobalExceptionHandler automáticamente
+        Producto productoCreado = productoService.crearProducto(producto);
+        
+        logger.info("✅ Producto creado exitosamente con ID: {}", productoCreado.getId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(productoCreado);
+    }
+
+    /**
+     * Actualiza un producto existente
+     * PUT /api/productos/{id}
+     * 
+     * @param id ID del producto a actualizar
+     * @param productoActualizado Nuevos datos del producto
+     * @return Producto actualizado o 404 si no existe
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<Producto> actualizarProducto(
+            @PathVariable Long id, 
+            @Valid @RequestBody Producto productoActualizado) {
+        
+        logger.info("🔄 Petición recibida: PUT /api/productos/{}", id);
+        
+        Optional<Producto> producto = productoService.actualizarProducto(id, productoActualizado);
+        
+        return producto
+                .map(p -> {
+                    logger.info("✅ Producto actualizado exitosamente: {}", p.getId());
+                    return ResponseEntity.ok(p);
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Elimina un producto (soft delete)
+     * DELETE /api/productos/{id}
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> eliminarProducto(@PathVariable Long id) {
+        logger.info("🗑️ Petición recibida: DELETE /api/productos/{}", id);
+        
+        boolean eliminado = productoService.eliminarProducto(id);
+        
+        if (eliminado) {
+            logger.info("✅ Producto eliminado exitosamente: {}", id);
+            return ResponseEntity.noContent().build();
+        } else {
+            logger.warn("⚠️ Producto no encontrado para eliminar: {}", id);
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Actualiza el stock de un producto
+     * PATCH /api/productos/{id}/stock
+     */
+    @PatchMapping("/{id}/stock")
+    public ResponseEntity<Void> actualizarStock(
+            @PathVariable Long id, 
+            @RequestParam Integer stock) {
+        
+        logger.info("📦 Petición recibida: PATCH /api/productos/{}/stock - Nuevo stock: {}", id, stock);
+        
+        boolean actualizado = productoService.actualizarStock(id, stock);
+        
+        if (actualizado) {
+            logger.info("✅ Stock actualizado exitosamente para producto: {}", id);
+            return ResponseEntity.ok().build();
+        } else {
+            logger.warn("⚠️ Producto no encontrado para actualizar stock: {}", id);
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    // =============================================
+    // QUERIES (OPERACIONES DE LECTURA)
+    // =============================================
 
     /**
      * Obtiene todos los productos
@@ -48,8 +147,9 @@ public class ProductoController {
      */
     @GetMapping
     public ResponseEntity<List<Producto>> obtenerTodosLosProductos() {
-        logger.info("Petición recibida: GET /api/productos");
+        logger.info("📋 Petición recibida: GET /api/productos");
         List<Producto> productos = productoService.obtenerTodosLosProductos();
+        logger.info("✅ Retornando {} productos", productos.size());
         return ResponseEntity.ok(productos);
     }
 
@@ -59,86 +159,24 @@ public class ProductoController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<Producto> obtenerProductoPorId(@PathVariable Long id) {
-        logger.info("Petición recibida: GET /api/productos/{}", id);
+        logger.info("🔍 Petición recibida: GET /api/productos/{}", id);
         
         Optional<Producto> producto = productoService.obtenerProductoPorId(id);
         
         return producto
-                .map(p -> ResponseEntity.ok(p))
-                .orElse(ResponseEntity.notFound().build());
+                .map(p -> {
+                    logger.info("✅ Producto encontrado: {}", p.getNombre());
+                    return ResponseEntity.ok(p);
+                })
+                .orElseGet(() -> {
+                    logger.warn("⚠️ Producto no encontrado: {}", id);
+                    return ResponseEntity.notFound().build();
+                });
     }
 
-    /**
-     * Crea un nuevo producto
-     * POST /api/productos
-     * 
-     * @param producto Datos del producto a crear
-     * @return Producto creado con HTTP 201, o error con HTTP 400
-     */
-    @PostMapping
-    public ResponseEntity<Producto> crearProducto(@Valid @RequestBody Producto producto) {
-        logger.info("Petición recibida: POST /api/productos - {}", producto.getNombre());
-        
-        try {
-            Producto productoCreado = productoService.crearProducto(producto);
-            logger.info("Producto creado exitosamente con ID: {}", productoCreado.getId());
-            return ResponseEntity.status(HttpStatus.CREATED).body(productoCreado);
-        } catch (ProductoException e) {
-            logger.warn("Error de validación al crear producto: [{}] {}", e.getCodigo(), e.getMessage());
-            return ResponseEntity.badRequest().build();
-        } catch (Exception e) {
-            logger.error("Error inesperado al crear producto", e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * Actualiza un producto existente
-     * PUT /api/productos/{id}
-     * 
-     * @param id ID del producto a actualizar
-     * @param productoActualizado Nuevos datos del producto
-     * @return Producto actualizado o error correspondiente
-     */
-    @PutMapping("/{id}")
-    public ResponseEntity<Producto> actualizarProducto(
-            @PathVariable Long id, 
-            @Valid @RequestBody Producto productoActualizado) {
-        
-        logger.info("Petición recibida: PUT /api/productos/{}", id);
-        
-        try {
-            Optional<Producto> producto = productoService.actualizarProducto(id, productoActualizado);
-            
-            return producto
-                    .map(p -> {
-                        logger.info("Producto actualizado exitosamente: {}", p.getId());
-                        return ResponseEntity.ok(p);
-                    })
-                    .orElse(ResponseEntity.notFound().build());
-        } catch (ProductoException e) {
-            logger.warn("Error de validación al actualizar producto {}: [{}] {}", id, e.getCodigo(), e.getMessage());
-            return ResponseEntity.badRequest().build();
-        } catch (Exception e) {
-            logger.error("Error inesperado al actualizar producto {}", id, e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
-
-    /**
-     * Elimina un producto (soft delete)
-     * DELETE /api/productos/{id}
-     */
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminarProducto(@PathVariable Long id) {
-        logger.info("Petición recibida: DELETE /api/productos/{}", id);
-        
-        boolean eliminado = productoService.eliminarProducto(id);
-        
-        return eliminado 
-                ? ResponseEntity.noContent().build()
-                : ResponseEntity.notFound().build();
-    }
+    // =============================================
+    // BÚSQUEDAS Y FILTROS
+    // =============================================
 
     /**
      * Busca productos por categoría
@@ -146,9 +184,10 @@ public class ProductoController {
      */
     @GetMapping("/categoria/{categoria}")
     public ResponseEntity<List<Producto>> buscarPorCategoria(@PathVariable String categoria) {
-        logger.info("Petición recibida: GET /api/productos/categoria/{}", categoria);
+        logger.info("🏷️ Petición recibida: GET /api/productos/categoria/{}", categoria);
         
         List<Producto> productos = productoService.buscarPorCategoria(categoria);
+        logger.info("✅ Encontrados {} productos en categoría '{}'", productos.size(), categoria);
         return ResponseEntity.ok(productos);
     }
 
@@ -158,9 +197,10 @@ public class ProductoController {
      */
     @GetMapping("/marca/{marca}")
     public ResponseEntity<List<Producto>> buscarPorMarca(@PathVariable String marca) {
-        logger.info("Petición recibida: GET /api/productos/marca/{}", marca);
+        logger.info("🏭 Petición recibida: GET /api/productos/marca/{}", marca);
         
         List<Producto> productos = productoService.buscarPorMarca(marca);
+        logger.info("✅ Encontrados {} productos de marca '{}'", productos.size(), marca);
         return ResponseEntity.ok(productos);
     }
 
@@ -170,9 +210,10 @@ public class ProductoController {
      */
     @GetMapping("/buscar")
     public ResponseEntity<List<Producto>> buscarPorNombre(@RequestParam String nombre) {
-        logger.info("Petición recibida: GET /api/productos/buscar?nombre={}", nombre);
+        logger.info("🔍 Petición recibida: GET /api/productos/buscar?nombre={}", nombre);
         
         List<Producto> productos = productoService.buscarPorNombre(nombre);
+        logger.info("✅ Encontrados {} productos con nombre '{}'", productos.size(), nombre);
         return ResponseEntity.ok(productos);
     }
 
@@ -185,9 +226,10 @@ public class ProductoController {
             @RequestParam BigDecimal min, 
             @RequestParam BigDecimal max) {
         
-        logger.info("Petición recibida: GET /api/productos/precio?min={}&max={}", min, max);
+        logger.info("💰 Petición recibida: GET /api/productos/precio?min={}&max={}", min, max);
         
         List<Producto> productos = productoService.buscarPorRangoPrecios(min, max);
+        logger.info("✅ Encontrados {} productos en rango ${}-${}", productos.size(), min, max);
         return ResponseEntity.ok(productos);
     }
 
@@ -197,11 +239,16 @@ public class ProductoController {
      */
     @GetMapping("/con-stock")
     public ResponseEntity<List<Producto>> obtenerProductosConStock() {
-        logger.info("Petición recibida: GET /api/productos/con-stock");
+        logger.info("📦 Petición recibida: GET /api/productos/con-stock");
         
         List<Producto> productos = productoService.obtenerProductosConStock();
+        logger.info("✅ Encontrados {} productos con stock", productos.size());
         return ResponseEntity.ok(productos);
     }
+
+    // =============================================
+    // METADATOS DEL CATÁLOGO
+    // =============================================
 
     /**
      * Obtiene todas las categorías disponibles
@@ -209,9 +256,10 @@ public class ProductoController {
      */
     @GetMapping("/categorias")
     public ResponseEntity<List<String>> obtenerCategorias() {
-        logger.info("Petición recibida: GET /api/productos/categorias");
+        logger.info("📂 Petición recibida: GET /api/productos/categorias");
         
         List<String> categorias = productoService.obtenerCategorias();
+        logger.info("✅ Retornando {} categorías", categorias.size());
         return ResponseEntity.ok(categorias);
     }
 
@@ -221,41 +269,10 @@ public class ProductoController {
      */
     @GetMapping("/marcas")
     public ResponseEntity<List<String>> obtenerMarcas() {
-        logger.info("Petición recibida: GET /api/productos/marcas");
+        logger.info("🏭 Petición recibida: GET /api/productos/marcas");
         
         List<String> marcas = productoService.obtenerMarcas();
+        logger.info("✅ Retornando {} marcas", marcas.size());
         return ResponseEntity.ok(marcas);
-    }
-
-    /**
-     * Actualiza el stock de un producto
-     * PATCH /api/productos/{id}/stock
-     * 
-     * @param id ID del producto
-     * @param stock Nueva cantidad de stock
-     * @return HTTP 200 si se actualizó, 404 si no existe, 400 si datos inválidos
-     */
-    @PatchMapping("/{id}/stock")
-    public ResponseEntity<Void> actualizarStock(
-            @PathVariable Long id, 
-            @RequestParam Integer stock) {
-        
-        logger.info("Petición recibida: PATCH /api/productos/{}/stock - Nuevo stock: {}", id, stock);
-        
-        try {
-            boolean actualizado = productoService.actualizarStock(id, stock);
-            return actualizado 
-                    ? ResponseEntity.ok().build()
-                    : ResponseEntity.notFound().build();
-        } catch (ProductoNoEncontradoException e) {
-            logger.warn("Producto no encontrado al actualizar stock: {}", e.getMessage());
-            return ResponseEntity.notFound().build();
-        } catch (ProductoException e) {
-            logger.warn("Error de validación al actualizar stock: [{}] {}", e.getCodigo(), e.getMessage());
-            return ResponseEntity.badRequest().build();
-        } catch (Exception e) {
-            logger.error("Error inesperado al actualizar stock del producto {}", id, e);
-            return ResponseEntity.internalServerError().build();
-        }
     }
 }

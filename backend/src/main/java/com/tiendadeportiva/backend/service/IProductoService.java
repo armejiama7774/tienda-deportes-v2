@@ -7,111 +7,119 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Interfaz que define el contrato para los servicios de productos.
- * Aplicando el Principio de Inversión de Dependencias (DIP) de SOLID.
+ * Interfaz del servicio de productos.
  * 
- * Esta abstracción permite:
- * - Desacoplar el controlador de la implementación específica
- * - Facilitar el testing con mocks
- * - Permitir múltiples implementaciones sin afectar clientes
- * - Mejorar la mantenibilidad y extensibilidad
- * 
- * @author Equipo Desarrollo
- * @version 1.0
- * @since Fase 1 - Monolito Modular
+ * EVOLUCIÓN ARQUITECTÓNICA - Fase 2: Arquitectura Hexagonal
+ * - Separación clara entre comandos y queries
+ * - Preparación para CQRS en fases futuras
+ * - API completa para operaciones de negocio
+ * - Siguiendo principios SOLID del proyecto evolutivo
  */
 public interface IProductoService {
     
-    /**
-     * Obtiene todos los productos activos del sistema
-     * @return Lista de productos disponibles
-     */
-    List<Producto> obtenerTodosLosProductos();
+    // =============================================
+    // COMANDOS (OPERACIONES DE ESCRITURA)
+    // =============================================
     
     /**
-     * Busca un producto por su identificador único
-     * @param id Identificador del producto
-     * @return Optional con el producto si existe, empty si no se encuentra
-     */
-    Optional<Producto> obtenerProductoPorId(Long id);
-    
-    /**
-     * Crea un nuevo producto en el sistema
-     * @param producto Datos del producto a crear
+     * Crea un nuevo producto
+     * @param producto Producto a crear
      * @return Producto creado con ID asignado
-     * @throws IllegalArgumentException si los datos son inválidos
      */
     Producto crearProducto(Producto producto);
     
     /**
      * Actualiza un producto existente
-     * @param id Identificador del producto a actualizar
-     * @param productoActualizado Nuevos datos del producto
+     * @param id ID del producto a actualizar
+     * @param productoActualizado Datos actualizados
      * @return Optional con el producto actualizado si existe
-     * @throws IllegalArgumentException si los datos son inválidos
      */
     Optional<Producto> actualizarProducto(Long id, Producto productoActualizado);
     
     /**
      * Elimina un producto (soft delete)
-     * @param id Identificador del producto a eliminar
-     * @return true si se eliminó correctamente, false si no existe
+     * @param id ID del producto a eliminar
+     * @return true si se eliminó exitosamente
      */
     boolean eliminarProducto(Long id);
     
     /**
+     * Actualiza el stock de un producto
+     * @param id ID del producto
+     * @param nuevoStock Nuevo valor de stock
+     * @return true si se actualizó exitosamente
+     */
+    boolean actualizarStock(Long id, Integer nuevoStock);
+    
+    // =============================================
+    // QUERIES BÁSICAS (OPERACIONES DE LECTURA)
+    // =============================================
+    
+    /**
+     * Obtiene todos los productos activos
+     * @return Lista de productos activos ordenados por fecha de creación
+     */
+    List<Producto> obtenerTodosLosProductos();
+    
+    /**
+     * Obtiene un producto por su ID
+     * @param id ID del producto
+     * @return Optional con el producto si existe y está activo
+     */
+    Optional<Producto> obtenerProductoPorId(Long id);
+    
+    // =============================================
+    // QUERIES DE FILTRADO (BÚSQUEDAS ESPECÍFICAS)
+    // =============================================
+    
+    /**
      * Busca productos por categoría
-     * @param categoria Categoría a filtrar
-     * @return Lista de productos de la categoría especificada
+     * @param categoria Categoría a buscar
+     * @return Lista de productos de la categoría ordenados por nombre
      */
     List<Producto> buscarPorCategoria(String categoria);
     
     /**
      * Busca productos por marca
-     * @param marca Marca a filtrar
-     * @return Lista de productos de la marca especificada
+     * @param marca Marca a buscar
+     * @return Lista de productos de la marca ordenados por nombre
      */
     List<Producto> buscarPorMarca(String marca);
     
     /**
-     * Busca productos por nombre (búsqueda parcial)
-     * @param nombre Nombre o parte del nombre a buscar
-     * @return Lista de productos que coinciden con el criterio
+     * Busca productos por nombre (contiene texto)
+     * @param nombre Texto a buscar en el nombre
+     * @return Lista de productos que coinciden ordenados por relevancia
      */
     List<Producto> buscarPorNombre(String nombre);
     
     /**
      * Busca productos en un rango de precios
-     * @param precioMinimo Precio mínimo del rango
-     * @param precioMaximo Precio máximo del rango
-     * @return Lista de productos en el rango especificado
+     * @param precioMin Precio mínimo (inclusive)
+     * @param precioMax Precio máximo (inclusive) 
+     * @return Lista de productos en el rango ordenados por precio
      */
-    List<Producto> buscarPorRangoPrecios(BigDecimal precioMinimo, BigDecimal precioMaximo);
+    List<Producto> buscarPorRangoPrecios(BigDecimal precioMin, BigDecimal precioMax);
     
     /**
      * Obtiene productos que tienen stock disponible
-     * @return Lista de productos con stock > 0
+     * @return Lista de productos con stock > 0 ordenados por stock descendente
      */
     List<Producto> obtenerProductosConStock();
     
-    /**
-     * Obtiene todas las categorías disponibles en el sistema
-     * @return Lista de categorías únicas
-     */
-    List<String> obtenerCategorias();
+    // =============================================
+    // QUERIES DE METADATOS (INFORMACIÓN DEL CATÁLOGO)
+    // =============================================
     
     /**
-     * Obtiene todas las marcas disponibles en el sistema
-     * @return Lista de marcas únicas
+     * Obtiene todas las marcas disponibles
+     * @return Lista de marcas únicas de productos activos
      */
     List<String> obtenerMarcas();
     
     /**
-     * Actualiza el stock de un producto específico
-     * @param id Identificador del producto
-     * @param nuevoStock Cantidad de stock a establecer
-     * @return true si se actualizó correctamente, false si no existe el producto
-     * @throws IllegalArgumentException si el stock es negativo
+     * Obtiene todas las categorías disponibles
+     * @return Lista de categorías únicas de productos activos
      */
-    boolean actualizarStock(Long id, Integer nuevoStock);
+    List<String> obtenerCategorias();
 }

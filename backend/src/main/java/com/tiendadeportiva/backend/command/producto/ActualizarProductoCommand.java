@@ -4,11 +4,11 @@ import com.tiendadeportiva.backend.command.Command;
 import com.tiendadeportiva.backend.command.CommandExecutionException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
-import com.tiendadeportiva.backend.repository.ProductoRepository;
+import com.tiendadeportiva.backend.domain.port.EventPublisherPort;
+import com.tiendadeportiva.backend.domain.port.ProductoRepositoryPort;
 import com.tiendadeportiva.backend.service.DescuentoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -27,9 +27,9 @@ public class ActualizarProductoCommand implements Command<Producto> {
     
     private final Long productoId;
     private final Producto datosActualizacion;
-    private final ProductoRepository repository;
+    private final ProductoRepositoryPort repositoryPort;     // 🎯 CAMBIO
     private final DescuentoService descuentoService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final EventPublisherPort eventPublisherPort;     // 🎯 CAMBIO
     private final String usuarioModificador;
     
     // Para rollback
@@ -39,15 +39,15 @@ public class ActualizarProductoCommand implements Command<Producto> {
     public ActualizarProductoCommand(
             Long productoId,
             Producto datosActualizacion,
-            ProductoRepository repository,
+            ProductoRepositoryPort repositoryPort,    // 🎯 CAMBIO: Puerto en lugar de implementación
             DescuentoService descuentoService,
-            ApplicationEventPublisher eventPublisher,
+            EventPublisherPort eventPublisherPort,    // 🎯 CAMBIO: Puerto en lugar de implementación  
             String usuarioModificador) {
         this.productoId = productoId;
         this.datosActualizacion = datosActualizacion;
-        this.repository = repository;
+        this.repositoryPort = repositoryPort;
         this.descuentoService = descuentoService;
-        this.eventPublisher = eventPublisher;
+        this.eventPublisherPort = eventPublisherPort;
         this.usuarioModificador = usuarioModificador;
     }
     
@@ -57,8 +57,8 @@ public class ActualizarProductoCommand implements Command<Producto> {
             logger.info("🔄 Ejecutando ActualizarProductoCommand para ID: {}", productoId);
             
             // 1. Obtener producto actual
-            Optional<Producto> productoOpt = repository.findById(productoId);
-            if (productoOpt.isEmpty() || !productoOpt.get().getActivo()) {
+            Optional<Producto> productoOpt = repositoryPort.findById(productoId);
+            if (productoOpt.isEmpty() || !Boolean.TRUE.equals(productoOpt.get().isActivo())) { // ✅ CORRECCIÓN
                 throw new CommandExecutionException(
                     "ActualizarProductoCommand",
                     "PRODUCTO_NO_ENCONTRADO",
@@ -85,7 +85,7 @@ public class ActualizarProductoCommand implements Command<Producto> {
             aplicarReglasActualizacion(producto);
             
             // 5. Persistir
-            estadoActualizado = repository.save(producto);
+            estadoActualizado = repositoryPort.save(producto);
             
             // 6. Publicar eventos si hubo cambios significativos
             publicarEventosSiNecesario(estadoAnterior, estadoActualizado);
@@ -111,7 +111,7 @@ public class ActualizarProductoCommand implements Command<Producto> {
                 logger.info("🔄 Revirtiendo ActualizarProductoCommand para ID: {}", productoId);
                 
                 // Restaurar estado anterior
-                repository.save(estadoAnterior);
+                repositoryPort.save(estadoAnterior);
                 
                 logger.info("✅ Actualización revertida exitosamente");
                 
@@ -162,12 +162,12 @@ public class ActualizarProductoCommand implements Command<Producto> {
             destino.setStockDisponible(origen.getStockDisponible());
         }
         
-        // Actualizar metadatos
-        destino.setFechaActualizacion(LocalDateTime.now());
+        // ✅ CORRECCIÓN: Actualizar fecha de modificación
+        destino.setFechaModificacion(LocalDateTime.now()); // ✅ NOMBRE CONSISTENTE
     }
     
     /**
-     * Valida que la actualización sea válida
+     * Valida si el producto se puede actualizar
      */
     private boolean esActualizacionValida(Producto producto) {
         if (producto.getNombre() == null || producto.getNombre().trim().isEmpty()) {
@@ -230,9 +230,9 @@ public class ActualizarProductoCommand implements Command<Producto> {
         clon.setCategoria(original.getCategoria());
         clon.setMarca(original.getMarca());
         clon.setStockDisponible(original.getStockDisponible());
-        clon.setActivo(original.getActivo());
+        clon.setActivo(original.isActivo()); // ✅ CORRECCIÓN: Boolean wrapper
         clon.setFechaCreacion(original.getFechaCreacion());
-        clon.setFechaActualizacion(original.getFechaActualizacion());
+        clon.setFechaModificacion(original.getFechaModificacion()); // ✅ CORRECCIÓN: Nombre consistente
         return clon;
     }
 }

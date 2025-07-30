@@ -3,10 +3,10 @@ package com.tiendadeportiva.backend.command.producto;
 import com.tiendadeportiva.backend.command.Command;
 import com.tiendadeportiva.backend.command.CommandExecutionException;
 import com.tiendadeportiva.backend.model.Producto;
-import com.tiendadeportiva.backend.repository.ProductoRepository;
+import com.tiendadeportiva.backend.domain.port.EventPublisherPort;
+import com.tiendadeportiva.backend.domain.port.ProductoRepositoryPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -24,8 +24,8 @@ public class EliminarProductoCommand implements Command<Boolean> {
     private static final Logger logger = LoggerFactory.getLogger(EliminarProductoCommand.class);
     
     private final Long productoId;
-    private final ProductoRepository repository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final ProductoRepositoryPort repositoryPort;     // 🎯 CAMBIO
+    private final EventPublisherPort eventPublisherPort;     // 🎯 CAMBIO
     private final String usuarioEliminador;
     
     // Para rollback
@@ -33,12 +33,12 @@ public class EliminarProductoCommand implements Command<Boolean> {
     
     public EliminarProductoCommand(
             Long productoId,
-            ProductoRepository repository,
-            ApplicationEventPublisher eventPublisher,
+            ProductoRepositoryPort repositoryPort,    // 🎯 CAMBIO: Puerto en lugar de implementación
+            EventPublisherPort eventPublisherPort,    // 🎯 CAMBIO: Puerto en lugar de implementación
             String usuarioEliminador) {
         this.productoId = productoId;
-        this.repository = repository;
-        this.eventPublisher = eventPublisher;
+        this.repositoryPort = repositoryPort;
+        this.eventPublisherPort = eventPublisherPort;
         this.usuarioEliminador = usuarioEliminador;
     }
     
@@ -48,7 +48,7 @@ public class EliminarProductoCommand implements Command<Boolean> {
             logger.info("🗑️ Ejecutando EliminarProductoCommand para ID: {}", productoId);
             
             // 1. Obtener producto
-            Optional<Producto> productoOpt = repository.findById(productoId);
+            Optional<Producto> productoOpt = repositoryPort.findById(productoId);
             if (productoOpt.isEmpty()) {
                 throw new CommandExecutionException(
                     "EliminarProductoCommand",
@@ -72,11 +72,11 @@ public class EliminarProductoCommand implements Command<Boolean> {
             productoEliminado = clonarProducto(producto);
             
             // 4. Soft delete
-            producto.setActivo(false);
-            producto.setFechaActualizacion(LocalDateTime.now());
+            producto.setActivo(Boolean.FALSE); // ✅ CORRECCIÓN: Boolean wrapper
+            producto.setFechaModificacion(LocalDateTime.now()); // ✅ CORRECCIÓN: Nombre consistente
             
             // 5. Persistir
-            repository.save(producto);
+            repositoryPort.save(producto);
             
             // 6. Publicar eventos
             publicarEventosEliminacion(producto);
@@ -102,8 +102,8 @@ public class EliminarProductoCommand implements Command<Boolean> {
                 logger.info("🔄 Revirtiendo EliminarProductoCommand para ID: {}", productoId);
                 
                 // Restaurar producto activo
-                productoEliminado.setActivo(true);
-                repository.save(productoEliminado);
+                productoEliminado.setActivo(Boolean.TRUE);
+                repositoryPort.save(productoEliminado);
                 
                 logger.info("✅ Eliminación revertida exitosamente");
                 
@@ -134,15 +134,10 @@ public class EliminarProductoCommand implements Command<Boolean> {
      */
     private boolean sePuedeEliminar(Producto producto) {
         // Ya está eliminado
-        if (!producto.getActivo()) {
+        if (!Boolean.TRUE.equals(producto.isActivo())) { // ✅ CORRECCIÓN: Safe Boolean comparison
             logger.warn("⚠️ El producto ya está eliminado");
             return false;
         }
-        
-        // TODO: Agregar validaciones de negocio
-        // - Verificar que no tenga pedidos pendientes
-        // - Verificar que no esté en carritos activos
-        // - Verificar permisos del usuario
         
         return true;
     }
@@ -167,9 +162,9 @@ public class EliminarProductoCommand implements Command<Boolean> {
         clon.setCategoria(original.getCategoria());
         clon.setMarca(original.getMarca());
         clon.setStockDisponible(original.getStockDisponible());
-        clon.setActivo(original.getActivo());
+        clon.setActivo(original.isActivo()); // ✅ Boolean wrapper
         clon.setFechaCreacion(original.getFechaCreacion());
-        clon.setFechaActualizacion(original.getFechaActualizacion());
+        clon.setFechaModificacion(original.getFechaModificacion()); // ✅ CORRECCIÓN: Nombre consistente
         return clon;
     }
 }

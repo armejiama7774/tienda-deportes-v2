@@ -2,17 +2,17 @@ package com.tiendadeportiva.backend.service;
 
 import com.tiendadeportiva.backend.command.CommandExecutionException;
 import com.tiendadeportiva.backend.command.CommandHandler;
-import com.tiendadeportiva.backend.command.producto.CrearProductoCommand;
 import com.tiendadeportiva.backend.command.producto.ActualizarProductoCommand;
+import com.tiendadeportiva.backend.command.producto.CrearProductoCommand;
 import com.tiendadeportiva.backend.command.producto.EliminarProductoCommand;
-import com.tiendadeportiva.backend.event.ProductoCreadoEvent;
+import com.tiendadeportiva.backend.domain.port.EventPublisherPort;
+import com.tiendadeportiva.backend.domain.port.ProductoRepositoryPort;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,18 +22,13 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Implementación del servicio de productos que cumple con principios SOLID.
+ * Servicio de productos usando arquitectura hexagonal.
  * 
- * Aplicando:
- * - Single Responsibility Principle (SRP): Solo maneja lógica de productos
- * - Open/Closed Principle (OCP): Abierto para extensión vía interfaz
- * - Liskov Substitution Principle (LSP): Puede ser sustituido por cualquier implementación de IProductoService
- * - Interface Segregation Principle (ISP): Interfaz específica para productos
- * - Dependency Inversion Principle (DIP): Depende de abstracciones (ProductoRepository)
- * 
- * @author Equipo Desarrollo
- * @version 1.0
- * @since Fase 1 - Monolito Modular con SOLID
+ * ARQUITECTURA HEXAGONAL COMPLETADA:
+ * - Usa puertos en lugar de implementaciones concretas para comandos
+ * - Mantiene queries directas para simplificar (preparación para CQRS)
+ * - Separación clara entre commands y queries
+ * - Independiente de tecnologías específicas en commands
  */
 @Service
 @Transactional
@@ -41,288 +36,235 @@ public class ProductoService implements IProductoService {
 
     private static final Logger logger = LoggerFactory.getLogger(ProductoService.class);
 
-    private final ProductoRepository productoRepository;
-    private final ApplicationEventPublisher applicationEventPublisher; // ✅ NUEVO
-    private final DescuentoService descuentoService; // ✅ NUEVA DEPENDENCIA
-    private final CommandHandler commandHandler; // ✅ NUEVA DEPENDENCIA
+    // 🎯 PUERTOS PARA COMANDOS (ARQUITECTURA HEXAGONAL)
+    private final ProductoRepositoryPort repositoryPort;
+    private final EventPublisherPort eventPublisherPort;
+    private final DescuentoService descuentoService;
+    private final CommandHandler commandHandler;
 
-    // Constructor actualizado
-    public ProductoService(ProductoRepository productoRepository, 
-                          ApplicationEventPublisher applicationEventPublisher,
-                          DescuentoService descuentoService,
-                          CommandHandler commandHandler) {
-        this.productoRepository = productoRepository;
-        this.applicationEventPublisher = applicationEventPublisher;
+    // 🎯 REPOSITORIO DIRECTO PARA QUERIES (PREPARACIÓN CQRS)
+    private final ProductoRepository queryRepository;
+
+    public ProductoService(
+            ProductoRepositoryPort repositoryPort,
+            EventPublisherPort eventPublisherPort,
+            DescuentoService descuentoService,
+            CommandHandler commandHandler,
+            ProductoRepository queryRepository) {
+        this.repositoryPort = repositoryPort;
+        this.eventPublisherPort = eventPublisherPort;
         this.descuentoService = descuentoService;
         this.commandHandler = commandHandler;
+        this.queryRepository = queryRepository;
     }
 
-    /**
-     * Obtiene todos los productos activos
-     */
-    @Transactional(readOnly = true)
-    public List<Producto> obtenerTodosLosProductos() {
-        logger.debug("Obteniendo todos los productos activos");
-        return productoRepository.findByActivoTrueOrderByFechaCreacionDesc();
-    }
+    // =============================================
+    // COMANDOS (USANDO PUERTOS HEXAGONALES)
+    // =============================================
 
-    /**
-     * Obtiene un producto por ID.
-     * Solo devuelve productos activos (no eliminados con soft delete).
-     * 
-     * @param id ID del producto a buscar
-     * @return Optional con el producto si existe y está activo
-     */
-    @Transactional(readOnly = true)
-    public Optional<Producto> obtenerProductoPorId(Long id) {
-        logger.info("Buscando producto con ID: {}", id);
-        
-        if (id == null || id <= 0) {
-            logger.warn("ID de producto inválido: {}", id);
-            return Optional.empty();
-        }
-        
-        Optional<Producto> producto = productoRepository.findById(id);
-        
-        // CORRECCIÓN: Usar getActivo() en lugar de isActivo()
-        if (producto.isPresent() && producto.get().getActivo()) {
-            logger.info("Producto encontrado: {}", producto.get().getNombre());
-            return producto;
-        }
-        
-        logger.info("Producto con ID {} no encontrado o está inactivo", id);
-        return Optional.empty();
-    }
-
-    /**
-     * Crea un nuevo producto
-     * EVOLUCIÓN COMPLETADA: ProductoService usando Command Pattern completo
-     * 
-     * - Todas las operaciones CUD delegadas a comandos especializados
-     * - Solo operaciones de lectura (queries) permanecen aquí
-     * - Preparación para separación Query/Command (CQRS)
-     */
     @Override
     public Producto crearProducto(Producto producto) {
         try {
             CrearProductoCommand command = new CrearProductoCommand(
                 producto,
-                productoRepository,
+                repositoryPort,       // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
                 descuentoService,
-                applicationEventPublisher,
+                eventPublisherPort,   // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
                 obtenerUsuarioActual()
             );
-            
+
             return commandHandler.handle(command);
-            
+
         } catch (CommandExecutionException e) {
             logger.error("Error creando producto: {}", e.getMessage(), e);
             throw new ProductoException(e.getErrorCode(), e.getMessage(), e);
         }
     }
 
-    /**
-     * Publica evento de producto creado
-     */
-    private void publicarEventoProductoCreado(Producto producto) {
-        try {
-            ProductoCreadoEvent evento = new ProductoCreadoEvent(this, producto, "SYSTEM");
-            applicationEventPublisher.publishEvent(evento);
-            logger.info("✅ Evento ProductoCreadoEvent publicado para producto: {}", producto.getNombre());
-        } catch (Exception e) {
-            logger.error("❌ Error publicando evento para producto {}: {}", 
-                        producto.getId(), e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Actualiza un producto existente
-     */
     @Override
     public Optional<Producto> actualizarProducto(Long id, Producto productoActualizado) {
         try {
             ActualizarProductoCommand command = new ActualizarProductoCommand(
                 id,
                 productoActualizado,
-                productoRepository,
+                repositoryPort,       // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
                 descuentoService,
-                applicationEventPublisher,
+                eventPublisherPort,   // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
                 obtenerUsuarioActual()
             );
-            
+
             Producto resultado = commandHandler.handle(command);
             return Optional.of(resultado);
-            
+
         } catch (CommandExecutionException e) {
             logger.error("Error actualizando producto {}: {}", id, e.getMessage(), e);
-            
+
             if ("PRODUCTO_NO_ENCONTRADO".equals(e.getErrorCode())) {
                 return Optional.empty();
             }
-            
+
             throw new ProductoException(e.getErrorCode(), e.getMessage(), e);
         }
     }
 
-    /**
-     * Elimina un producto (soft delete)
-     */
     @Override
     public boolean eliminarProducto(Long id) {
         try {
             EliminarProductoCommand command = new EliminarProductoCommand(
                 id,
-                productoRepository,
-                applicationEventPublisher,
+                repositoryPort,       // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
+                eventPublisherPort,   // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
                 obtenerUsuarioActual()
             );
-            
+
             return commandHandler.handle(command);
-            
+
         } catch (CommandExecutionException e) {
             logger.error("Error eliminando producto {}: {}", id, e.getMessage(), e);
-            
+
             if ("PRODUCTO_NO_ENCONTRADO".equals(e.getErrorCode())) {
                 return false;
             }
-            
+
             throw new ProductoException(e.getErrorCode(), e.getMessage(), e);
         }
     }
 
+    // =============================================
+    // QUERIES (ACCESO DIRECTO - PREPARACIÓN CQRS)
+    // =============================================
+
+    @Override
+    public List<Producto> obtenerTodosLosProductos() {
+        return queryRepository.findByActivoTrueOrderByFechaCreacionDesc();
+    }
+
+    @Override
+    public Optional<Producto> obtenerProductoPorId(Long id) {
+        Optional<Producto> producto = queryRepository.findById(id);
+        // ✅ CORRECCIÓN: Safe Boolean comparison
+        return producto.filter(p -> Boolean.TRUE.equals(p.isActivo()));
+    }
+
+    @Override
+    public List<Producto> buscarPorCategoria(String categoria) {
+        return queryRepository.findByCategoriaAndActivoTrue(categoria);
+    }
+
+    @Override
+    public List<Producto> buscarPorMarca(String marca) {
+        return queryRepository.findByMarcaAndActivoTrue(marca);
+    }
+
+    @Override
+    public List<Producto> buscarPorNombre(String nombre) {
+        return queryRepository.findByNombreContainingIgnoreCaseAndActivoTrue(nombre);
+    }
+
+    @Override
+    public boolean actualizarStock(Long id, Integer nuevoStock) {
+        if (nuevoStock < 0) {
+            throw new ProductoException("STOCK_INVALIDO", "El stock no puede ser negativo");
+        }
+
+        Optional<Producto> productoOpt = queryRepository.findById(id);
+        // ✅ CORRECCIÓN: Safe Boolean comparison
+        if (productoOpt.isEmpty() || !Boolean.TRUE.equals(productoOpt.get().isActivo())) {
+            throw new ProductoNoEncontradoException(id);
+        }
+
+        Producto producto = productoOpt.get();
+        producto.setStockDisponible(nuevoStock);
+        producto.setFechaModificacion(LocalDateTime.now()); // ✅ CORRECCIÓN: Actualizar fecha
+        queryRepository.save(producto);
+
+        return true;
+    }
+
+    // =============================================
+    // QUERIES DE FILTRADO (BÚSQUEDAS ESPECÍFICAS)
+    // =============================================
+
+    @Override
+    public List<Producto> buscarPorRangoPrecios(BigDecimal precioMin, BigDecimal precioMax) {
+        logger.debug("🔍 Buscando productos en rango de precios: ${} - ${}", precioMin, precioMax);
+        
+        // Validaciones de entrada
+        if (precioMin == null || precioMax == null) {
+            throw new ProductoException("PRECIO_INVALIDO", "Los precios mínimo y máximo son requeridos");
+        }
+        
+        if (precioMin.compareTo(BigDecimal.ZERO) < 0 || precioMax.compareTo(BigDecimal.ZERO) < 0) {
+            throw new ProductoException("PRECIO_INVALIDO", "Los precios no pueden ser negativos");
+        }
+        
+        if (precioMin.compareTo(precioMax) > 0) {
+            throw new ProductoException("RANGO_INVALIDO", "El precio mínimo no puede ser mayor que el máximo");
+        }
+        
+        List<Producto> productos = queryRepository.findByPrecioBetweenAndActivoTrueOrderByPrecio(precioMin, precioMax);
+        
+        logger.info("✅ Encontrados {} productos en rango ${} - ${}", 
+                   productos.size(), precioMin, precioMax);
+        
+        return productos;
+    }
+
+    @Override
+    public List<Producto> obtenerProductosConStock() {
+        logger.debug("🔍 Obteniendo productos con stock disponible");
+        
+        List<Producto> productos = queryRepository.findByStockDisponibleGreaterThanAndActivoTrue(0);
+        
+        logger.info("✅ Encontrados {} productos con stock disponible", productos.size());
+        
+        return productos;
+    }
+
+    // =============================================
+    // QUERIES DE METADATOS (INFORMACIÓN DEL CATÁLOGO)
+    // =============================================
+
     /**
-     * Obtiene el usuario actual del contexto de seguridad
-     * TODO: Integrar con Spring Security cuando se implemente autenticación
+     * Obtiene todas las marcas disponibles de productos activos
+     * @return Lista de marcas únicas ordenadas alfabéticamente
+     */
+    @Override
+    public List<String> obtenerMarcas() {
+        logger.debug("🔍 Obteniendo todas las marcas disponibles");
+        
+        List<String> marcas = queryRepository.findDistinctMarcaByActivoTrue();
+        
+        logger.info("✅ Encontradas {} marcas disponibles", marcas.size());
+        
+        return marcas;
+    }
+
+    /**
+     * Obtiene todas las categorías disponibles de productos activos
+     * @return Lista de categorías únicas ordenadas alfabéticamente
+     */
+    @Override
+    public List<String> obtenerCategorias() {
+        logger.debug("🔍 Obteniendo todas las categorías disponibles");
+        
+        List<String> categorias = queryRepository.findDistinctCategoriaByActivoTrue();
+        
+        logger.info("✅ Encontradas {} categorías disponibles", categorias.size());
+        
+        return categorias;
+    }
+
+    // =============================================
+    // MÉTODOS PRIVADOS
+    // =============================================
+
+    /**
+     * Obtiene el usuario actual del contexto de seguridad.
+     * TODO: Integrar con Spring Security en fases futuras
      */
     private String obtenerUsuarioActual() {
         // TODO: Implementar cuando tengamos autenticación
         return "SYSTEM";
-    }
-
-    /**
-     * Busca productos por categoría
-     */
-    @Transactional(readOnly = true)
-    public List<Producto> buscarPorCategoria(String categoria) {
-        logger.debug("Buscando productos por categoría: {}", categoria);
-        return productoRepository.findByCategoriaAndActivoTrue(categoria);
-    }
-
-    /**
-     * Busca productos por marca
-     */
-    @Transactional(readOnly = true)
-    public List<Producto> buscarPorMarca(String marca) {
-        logger.debug("Buscando productos por marca: {}", marca);
-        return productoRepository.findByMarcaAndActivoTrue(marca);
-    }
-
-    /**
-     * Busca productos por nombre
-     */
-    @Transactional(readOnly = true)
-    public List<Producto> buscarPorNombre(String nombre) {
-        logger.debug("Buscando productos por nombre: {}", nombre);
-        return productoRepository.findByNombreContainingIgnoreCaseAndActivoTrue(nombre);
-    }
-
-    /**
-     * Busca productos en un rango de precios
-     */
-    @Transactional(readOnly = true)
-    public List<Producto> buscarPorRangoPrecios(BigDecimal precioMin, BigDecimal precioMax) {
-        logger.debug("Buscando productos en rango de precios: {} - {}", precioMin, precioMax);
-        return productoRepository.findByPrecioBetweenAndActivoTrueOrderByPrecioAsc(precioMin, precioMax);
-    }
-
-    /**
-     * Obtiene productos con stock disponible
-     */
-    @Transactional(readOnly = true)
-    public List<Producto> obtenerProductosConStock() {
-        logger.debug("Obteniendo productos con stock disponible");
-        return productoRepository.findProductosConStock();
-    }
-
-    /**
-     * Obtiene todas las categorías disponibles
-     */
-    @Transactional(readOnly = true)
-    public List<String> obtenerCategorias() {
-        logger.debug("Obteniendo categorías disponibles");
-        return productoRepository.findDistinctCategorias();
-    }
-
-    /**
-     * Obtiene todas las marcas disponibles
-     */
-    @Transactional(readOnly = true)
-    public List<String> obtenerMarcas() {
-        logger.debug("Obteniendo marcas disponibles");
-        return productoRepository.findDistinctMarcas();
-    }
-
-    /**
-     * Actualiza el stock de un producto
-     * @param id Identificador del producto
-     * @param nuevoStock Cantidad de stock a establecer
-     * @return true si se actualizó correctamente
-     * @throws ProductoNoEncontradoException si el producto no existe
-     * @throws ProductoException si el stock es inválido
-     */
-    public boolean actualizarStock(Long id, Integer nuevoStock) {
-        logger.info("Actualizando stock del producto ID: {} a {}", id, nuevoStock);
-        
-        if (nuevoStock < 0) {
-            throw new ProductoException("STOCK_INVALIDO", 
-                "El stock no puede ser negativo. Valor recibido: " + nuevoStock);
-        }
-        
-        Producto producto = productoRepository.findById(id)
-                .orElseThrow(() -> new ProductoNoEncontradoException(id));
-                
-        producto.setStockDisponible(nuevoStock);
-        productoRepository.save(producto);
-        logger.info("Stock actualizado exitosamente para producto ID: {}", id);
-        return true;
-    }
-
-    /**
-     * Valida las reglas de negocio para un producto
-     * Aplica validaciones específicas del dominio más allá de las anotaciones JPA
-     */
-    private void validarProducto(Producto producto) {
-        if (producto.getPrecio() != null && producto.getPrecio().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ProductoException("PRECIO_INVALIDO", 
-                "El precio debe ser mayor que 0. Precio recibido: " + producto.getPrecio());
-        }
-        
-        if (producto.getStockDisponible() != null && producto.getStockDisponible() < 0) {
-            throw new ProductoException("STOCK_INVALIDO", 
-                "El stock no puede ser negativo. Stock recibido: " + producto.getStockDisponible());
-        }
-        
-        // 🔧 CORRECCIÓN: Validación de duplicados usando el método correcto
-        if (producto.getId() == null) { // Solo para productos nuevos
-            boolean existe = productoRepository.existsByNombreAndMarcaAndActivoTrue(
-                producto.getNombre(), producto.getMarca());
-            if (existe) {
-                throw new ProductoException("PRODUCTO_DUPLICADO", 
-                    String.format("Ya existe un producto activo con nombre '%s' y marca '%s'", 
-                        producto.getNombre(), producto.getMarca()));
-            }
-        }
-        
-        // Resto de validaciones...
-        List<String> categoriasPermitidas = List.of(
-            "Camisetas", "Pantalones", "Zapatos", "Accesorios", 
-            "Ropa Interior", "Conjuntos", "Chaquetas"
-        );
-        if (producto.getCategoria() != null && 
-            !categoriasPermitidas.contains(producto.getCategoria())) {
-            throw new ProductoException("CATEGORIA_NO_PERMITIDA", 
-                String.format("La categoría '%s' no está permitida. Categorías válidas: %s", 
-                    producto.getCategoria(), categoriasPermitidas));
-        }
     }
 }

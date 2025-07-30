@@ -2,34 +2,33 @@ package com.tiendadeportiva.backend.command.producto;
 
 import com.tiendadeportiva.backend.command.Command;
 import com.tiendadeportiva.backend.command.CommandExecutionException;
+import com.tiendadeportiva.backend.domain.port.EventPublisherPort;
+import com.tiendadeportiva.backend.domain.port.ProductoRepositoryPort;
 import com.tiendadeportiva.backend.event.ProductoCreadoEvent;
-import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.model.Producto;
-import com.tiendadeportiva.backend.repository.ProductoRepository;
 import com.tiendadeportiva.backend.service.DescuentoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDateTime;
 
 /**
- * Comando para crear un nuevo producto.
+ * Comando para crear un nuevo producto usando puertos de dominio.
  * 
- * EVOLUCIÓN ARQUITECTÓNICA:
- * - Encapsula toda la lógica de creación de producto
- * - Permite transacciones complejas con rollback
- * - Facilita testing de operaciones específicas
- * - Preparación para arquitectura hexagonal
+ * ARQUITECTURA HEXAGONAL COMPLETADA:
+ * - Usa puertos en lugar de implementaciones concretas
+ * - Independiente de Spring Data JPA
+ * - Independiente de Spring Events
+ * - Testeable con mocks simples
  */
 public class CrearProductoCommand implements Command<Producto> {
     
     private static final Logger logger = LoggerFactory.getLogger(CrearProductoCommand.class);
     
     private final Producto producto;
-    private final ProductoRepository repository;
+    private final ProductoRepositoryPort repositoryPort; // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
     private final DescuentoService descuentoService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final EventPublisherPort eventPublisherPort; // 🎯 PUERTO EN LUGAR DE IMPLEMENTACIÓN
     private final String usuarioCreador;
     
     // Para rollback si es necesario
@@ -37,14 +36,14 @@ public class CrearProductoCommand implements Command<Producto> {
     
     public CrearProductoCommand(
             Producto producto,
-            ProductoRepository repository,
+            ProductoRepositoryPort repositoryPort,
             DescuentoService descuentoService,
-            ApplicationEventPublisher eventPublisher,
+            EventPublisherPort eventPublisherPort,
             String usuarioCreador) {
         this.producto = producto;
-        this.repository = repository;
+        this.repositoryPort = repositoryPort;
         this.descuentoService = descuentoService;
-        this.eventPublisher = eventPublisher;
+        this.eventPublisherPort = eventPublisherPort;
         this.usuarioCreador = usuarioCreador;
     }
     
@@ -68,11 +67,11 @@ public class CrearProductoCommand implements Command<Producto> {
             // 3. Aplicar reglas de negocio
             aplicarReglasNegocio();
             
-            // 4. Persistir
-            productoCreado = repository.save(producto);
+            // 4. Persistir usando puerto
+            productoCreado = repositoryPort.save(producto);
             logger.info("✅ Producto persistido con ID: {}", productoCreado.getId());
             
-            // 5. Publicar eventos
+            // 5. Publicar eventos usando puerto
             publicarEventos();
             
             logger.info("🎉 CrearProductoCommand ejecutado exitosamente para: {}", 
@@ -91,6 +90,9 @@ public class CrearProductoCommand implements Command<Producto> {
         }
     }
     
+    /**
+     * Corregir método undo() - línea aproximada 97
+     */
     @Override
     public void undo() throws CommandExecutionException {
         if (productoCreado != null) {
@@ -98,9 +100,9 @@ public class CrearProductoCommand implements Command<Producto> {
                 logger.info("🔄 Revirtiendo CrearProductoCommand para producto ID: {}", 
                            productoCreado.getId());
                 
-                // Soft delete para mantener trazabilidad
-                productoCreado.setActivo(false);
-                repository.save(productoCreado);
+                // ✅ CORRECCIÓN: Boolean wrapper
+                productoCreado.setActivo(Boolean.FALSE);
+                repositoryPort.save(productoCreado);
                 
                 logger.info("✅ CrearProductoCommand revertido exitosamente");
                 
@@ -134,8 +136,8 @@ public class CrearProductoCommand implements Command<Producto> {
                 return false;
             }
             
-            // Validar duplicados
-            boolean existe = repository.existsByNombreAndMarcaAndActivoTrue(
+            // Validar duplicados usando puerto
+            boolean existe = repositoryPort.existsActiveByNameAndBrand(
                 producto.getNombre(), producto.getMarca()
             );
             
@@ -164,7 +166,7 @@ public class CrearProductoCommand implements Command<Producto> {
      */
     private void prepararProducto() {
         producto.setFechaCreacion(LocalDateTime.now());
-        producto.setActivo(true);
+        producto.setActivo(Boolean.TRUE); // ✅ CORRECCIÓN: Boolean wrapper
         
         // Asegurar que no tenga ID (es creación)
         producto.setId(null);
@@ -186,14 +188,14 @@ public class CrearProductoCommand implements Command<Producto> {
     }
     
     /**
-     * Publica eventos relacionados
+     * Publica eventos relacionados usando puerto
      */
     private void publicarEventos() {
         try {
             ProductoCreadoEvent evento = new ProductoCreadoEvent(
                 this, productoCreado, usuarioCreador
             );
-            eventPublisher.publishEvent(evento);
+            eventPublisherPort.publishEvent(evento);
             
             logger.info("📡 Evento ProductoCreadoEvent publicado");
             

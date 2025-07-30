@@ -1,61 +1,47 @@
 package com.tiendadeportiva.backend.exception;
 
 /**
- * Excepción personalizada para errores relacionados con productos.
- * Aplicando el patrón de excepciones específicas del dominio.
+ * Excepción específica para operaciones de producto.
  * 
- * Esta clase permite manejar errores de negocio de manera más granular
- * y proporcionar mensajes más descriptivos al cliente.
- * 
- * @author Equipo Desarrollo
- * @version 1.0
- * @since Fase 1 - Monolito Modular
+ * EVOLUCIÓN ARQUITECTÓNICA - Fase 2: Arquitectura Hexagonal
+ * - Excepciones del dominio independientes de infraestructura
+ * - Códigos de error estructurados para diferentes capas
+ * - Preparación para manejo centralizado de errores
+ * - Siguiendo Google Java Style Guide
  */
 public class ProductoException extends RuntimeException {
     
-    private final String codigo;
+    private final String errorCode;
     
-    /**
-     * Constructor con mensaje personalizado
-     * @param mensaje Descripción del error
-     */
-    public ProductoException(String mensaje) {
-        super(mensaje);
-        this.codigo = "PRODUCTO_ERROR";
+    public ProductoException(String errorCode, String message) {
+        super(message);
+        this.errorCode = errorCode;
+    }
+    
+    public ProductoException(String errorCode, String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = errorCode;
     }
     
     /**
-     * Constructor con mensaje y código de error
-     * @param codigo Código identificador del error
-     * @param mensaje Descripción del error
+     * Obtiene el código de error específico
+     * @return Código de error estructurado
      */
-    public ProductoException(String codigo, String mensaje) {
-        super(mensaje);
-        this.codigo = codigo;
+    public String getErrorCode() {
+        return errorCode;
     }
     
     /**
-     * Constructor con mensaje y causa
-     * @param mensaje Descripción del error
-     * @param causa Excepción que causó este error
+     * Método de compatibilidad para getCodigo()
+     * ✅ CORRECCIÓN: Mantener compatibilidad con código existente
      */
-    public ProductoException(String mensaje, Throwable causa) {
-        super(mensaje, causa);
-        this.codigo = "PRODUCTO_ERROR";
-    }
-    
-    /**
-     * Constructor completo
-     * @param codigo Código identificador del error
-     * @param mensaje Descripción del error
-     * @param causa Excepción que causó este error
-     */
-    public ProductoException(String codigo, String mensaje, Throwable causa) {
-        super(mensaje, causa);
-        this.codigo = codigo;
-    }
-    
     public String getCodigo() {
-        return codigo;
+        return errorCode;
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("ProductoException{errorCode='%s', message='%s'}", 
+                           errorCode, getMessage());
     }
 }

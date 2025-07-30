@@ -8,66 +8,88 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.util.List;
 
+/**
+ * Repositorio Spring Data JPA para Producto
+ * 
+ * EVOLUCIÓN ARQUITECTÓNICA - Fase 2: Arquitectura Hexagonal
+ * - Métodos únicos sin duplicación
+ * - Consultas optimizadas para operaciones de negocio
+ * - Siguiendo Google Java Style Guide
+ */
 @Repository
 public interface ProductoRepository extends JpaRepository<Producto, Long> {
-
+    
+    // =============================================
+    // MÉTODOS BÁSICOS PARA QUERIES
+    // =============================================
+    
+    /**
+     * Obtiene todos los productos activos ordenados por fecha de creación
+     */
+    List<Producto> findByActivoTrueOrderByFechaCreacionDesc();
+    
     /**
      * Busca productos activos por categoría
      */
     List<Producto> findByCategoriaAndActivoTrue(String categoria);
-
+    
     /**
      * Busca productos activos por marca
      */
     List<Producto> findByMarcaAndActivoTrue(String marca);
-
+    
     /**
-     * Busca productos por nombre que contenga el texto especificado (case-insensitive)
+     * Busca productos activos que contengan el nombre especificado
+     * ✅ MÉTODO ÚNICO - Sin duplicación
      */
     List<Producto> findByNombreContainingIgnoreCaseAndActivoTrue(String nombre);
-
+    
+    // =============================================
+    // MÉTODOS PARA BÚSQUEDAS AVANZADAS
+    // =============================================
+    
     /**
-     * Busca productos en un rango de precios
+     * Busca productos activos en rango de precios ordenados por precio
      */
-    List<Producto> findByPrecioBetweenAndActivoTrueOrderByPrecioAsc(BigDecimal precioMin, BigDecimal precioMax);
-
+    List<Producto> findByPrecioBetweenAndActivoTrueOrderByPrecio(BigDecimal precioMin, BigDecimal precioMax);
+    
     /**
-     * Busca productos con stock disponible
+     * Busca productos activos con stock disponible
      */
-    @Query("SELECT p FROM Producto p WHERE p.stockDisponible > 0 AND p.activo = true")
-    List<Producto> findProductosConStock();
-
+    List<Producto> findByStockDisponibleGreaterThanAndActivoTrue(Integer stock);
+    
+    // =============================================
+    // MÉTODOS PARA ADAPTADOR HEXAGONAL
+    // =============================================
+    
     /**
-     * Obtiene todas las categorías únicas de productos activos
-     */
-    @Query("SELECT DISTINCT p.categoria FROM Producto p WHERE p.activo = true")
-    List<String> findDistinctCategorias();
-
-    /**
-     * Obtiene todas las marcas únicas de productos activos
-     */
-    @Query("SELECT DISTINCT p.marca FROM Producto p WHERE p.activo = true")
-    List<String> findDistinctMarcas();
-
-    /**
-     * Busca productos activos ordenados por fecha de creación descendente (más recientes primero)
-     */
-    List<Producto> findByActivoTrueOrderByFechaCreacionDesc();
-
-    /**
-     * Verifica si existe un producto activo con el mismo nombre y marca
-     * Útil para validaciones de negocio de duplicados
+     * Verifica si existe un producto activo con nombre y marca específicos
      */
     boolean existsByNombreAndMarcaAndActivoTrue(String nombre, String marca);
-
+    
     /**
-     * Verifica si existe un producto activo con el mismo nombre
-     * Útil para validaciones de negocio de duplicados
+     * Busca productos activos por categoría ordenados por nombre
      */
-    boolean existsByNombreAndActivoTrue(String nombre);
-
+    List<Producto> findByCategoriaAndActivoTrueOrderByNombre(String categoria);
+    
     /**
-     * Cuenta el número de productos activos
+     * Busca productos activos por marca ordenados por nombre
      */
-    long countByActivoTrue();
+    List<Producto> findByMarcaAndActivoTrueOrderByNombre(String marca);
+    
+    // =============================================
+    // QUERIES PERSONALIZADAS PARA METADATOS
+    // =============================================
+    
+    /**
+     * Obtiene categorías distintas de productos activos
+     */
+    @Query("SELECT DISTINCT p.categoria FROM Producto p WHERE p.activo = true ORDER BY p.categoria")
+    List<String> findDistinctCategoriaByActivoTrue();
+    
+    /**
+     * Obtiene marcas distintas de productos activos
+     */
+    @Query("SELECT DISTINCT p.marca FROM Producto p WHERE p.activo = true ORDER BY p.marca")
+    List<String> findDistinctMarcaByActivoTrue();
 }
