@@ -1,5 +1,6 @@
 package com.tiendadeportiva.backend.service;
 
+import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
 
 import java.math.BigDecimal;
@@ -122,4 +123,35 @@ public interface IProductoService {
      * @return Lista de categorías únicas de productos activos
      */
     List<String> obtenerCategorias();
+    
+    // =============================================
+    // OPERACIONES DE PRECIOS Y DESCUENTOS (NUEVA FUNCIONALIDAD)
+    // =============================================
+    
+    /**
+     * Calcula el precio final de un producto aplicando descuentos disponibles.
+     * 
+     * FASE 2: ARQUITECTURA HEXAGONAL - STRATEGY PATTERN
+     * 
+     * Este método integra el nuevo sistema de descuentos implementado con Strategy Pattern:
+     * - Utiliza DescuentoService como coordinador
+     * - Aplica automáticamente la mejor estrategia disponible
+     * - Considera contexto de compra (cantidad, usuario VIP, etc.)
+     * 
+     * CASO DE USO TÍPICO:
+     * - Mostrar precios con descuento en catálogo
+     * - Calcular total del carrito
+     * - Validar descuentos antes del checkout
+     * 
+     * @param productoId ID del producto para el cual calcular el precio
+     * @param cantidadEnCarrito Cantidad del producto en el carrito (para descuentos por volumen)
+     * @param esUsuarioVIP true si el usuario tiene privilegios VIP
+     * @return Precio final después de aplicar el mejor descuento disponible
+     * @throws ProductoNoEncontradoException si el producto no existe
+     * 
+     * @since Fase 2 - Strategy Pattern Integration
+     * @author Equipo Desarrollo
+     * @version 2.1
+     */
+    BigDecimal calcularPrecioConDescuento(Long productoId, Integer cantidadEnCarrito, boolean esUsuarioVIP);
 }

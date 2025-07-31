@@ -6,6 +6,7 @@ import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
+import com.tiendadeportiva.backend.service.descuento.DescuentoContexto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -378,5 +379,170 @@ class ProductoServiceTest {
         } catch (CommandExecutionException e) {
             throw new RuntimeException(e);
         }
+    }
+    
+    // =============================================
+    // TESTS PARA NUEVA FUNCIONALIDAD: PRECIOS CON DESCUENTO
+    // =============================================
+
+    @Test
+    @DisplayName("Debe calcular precio con descuento correctamente para usuario regular")
+    void debeCalcularPrecioConDescuentoParaUsuarioRegular() {
+        // Arrange
+        Long productoId = 1L;
+        Integer cantidadEnCarrito = 2;
+        boolean esUsuarioVIP = false;
+        BigDecimal precioEsperado = new BigDecimal("90.00");
+        
+        Producto producto = crearProductoParaTest(productoId, "Zapatos Nike", "Zapatos", new BigDecimal("100.00"));
+        
+        // Mock: El producto existe
+        when(productoRepository.findById(productoId))
+                .thenReturn(Optional.of(producto));
+        
+        // Mock: DescuentoService retorna información con descuento
+        DescuentoService.DescuentoInfo descuentoInfo = new DescuentoService.DescuentoInfo(
+                new BigDecimal("100.00"), // precio original
+                precioEsperado,           // precio final
+                "Descuento por Categoría", // estrategia aplicada
+                new BigDecimal("10.00"),  // total descuento
+                150L                      // tiempo cálculo ms
+        );
+        
+        when(descuentoService.aplicarDescuentos(eq(producto), any(DescuentoContexto.class)))
+                .thenReturn(descuentoInfo);
+
+        // Act
+        BigDecimal precioFinal = productoService.calcularPrecioConDescuento(productoId, cantidadEnCarrito, esUsuarioVIP);
+
+        // Assert
+        assertThat(precioFinal).isEqualTo(precioEsperado);
+        
+        // Verify: Se llamó al repositorio para obtener el producto
+        verify(productoRepository).findById(productoId);
+        
+        // Verify: Se llamó al servicio de descuentos con el contexto correcto
+        verify(descuentoService).aplicarDescuentos(eq(producto), any(DescuentoContexto.class));
+        
+        logger.info("✅ Test exitoso: Precio con descuento calculado correctamente para usuario regular");
+    }
+
+    @Test
+    @DisplayName("Debe calcular precio con descuento correctamente para usuario VIP")
+    void debeCalcularPrecioConDescuentoParaUsuarioVIP() {
+        // Arrange
+        Long productoId = 2L;
+        Integer cantidadEnCarrito = 5; // Cantidad que califica para descuento por volumen
+        boolean esUsuarioVIP = true;
+        BigDecimal precioEsperado = new BigDecimal("75.00"); // Mayor descuento para VIP
+        
+        Producto producto = crearProductoParaTest(productoId, "Camiseta Adidas", "Camisetas", new BigDecimal("100.00"));
+        
+        // Mock: El producto existe
+        when(productoRepository.findById(productoId))
+                .thenReturn(Optional.of(producto));
+        
+        // Mock: DescuentoService retorna mayor descuento para VIP
+        DescuentoService.DescuentoInfo descuentoInfo = new DescuentoService.DescuentoInfo(
+                new BigDecimal("100.00"), // precio original
+                precioEsperado,           // precio final con descuento VIP
+                "Descuento por Cantidad", // estrategia aplicada
+                new BigDecimal("25.00"),  // mayor descuento para VIP
+                200L                      // tiempo cálculo ms
+        );
+        
+        when(descuentoService.aplicarDescuentos(eq(producto), any(DescuentoContexto.class)))
+                .thenReturn(descuentoInfo);
+
+        // Act
+        BigDecimal precioFinal = productoService.calcularPrecioConDescuento(productoId, cantidadEnCarrito, esUsuarioVIP);
+
+        // Assert
+        assertThat(precioFinal).isEqualTo(precioEsperado);
+        
+        // Verify: Se construyó contexto con tipo de usuario VIP
+        verify(descuentoService).aplicarDescuentos(eq(producto), argThat(contexto -> 
+            "VIP".equals(contexto.getTipoUsuario()) && 
+            cantidadEnCarrito.equals(contexto.getCantidadEnCarrito())
+        ));
+        
+        logger.info("✅ Test exitoso: Precio con descuento VIP calculado correctamente");
+    }
+
+    @Test
+    @DisplayName("Debe lanzar excepción cuando producto no existe")
+    void debeLanzarExcepcionCuandoProductoNoExiste() {
+        // Arrange
+        Long productoIdInexistente = 999L;
+        Integer cantidadEnCarrito = 1;
+        boolean esUsuarioVIP = false;
+        
+        // Mock: El producto no existe
+        when(productoRepository.findById(productoIdInexistente))
+                .thenReturn(Optional.empty());
+
+        // Act & Assert
+        ProductoNoEncontradoException exception = assertThrows(
+                ProductoNoEncontradoException.class,
+                () -> productoService.calcularPrecioConDescuento(productoIdInexistente, cantidadEnCarrito, esUsuarioVIP)
+        );
+        
+        assertThat(exception.getMessage()).contains("No se encontró producto con ID: " + productoIdInexistente);
+        
+        // Verify: No se llamó al servicio de descuentos
+        verify(descuentoService, never()).aplicarDescuentos(any(), any());
+        
+        logger.info("✅ Test exitoso: Excepción lanzada correctamente para producto inexistente");
+    }
+
+    @Test
+    @DisplayName("Debe manejar error del servicio de descuentos gracefully")
+    void debeManejarErrorDelServicioDeDescuentosGracefully() {
+        // Arrange
+        Long productoId = 3L;
+        Integer cantidadEnCarrito = 1;
+        boolean esUsuarioVIP = false;
+        
+        Producto producto = crearProductoParaTest(productoId, "Pantalones Nike", "Pantalones", new BigDecimal("80.00"));
+        
+        // Mock: El producto existe
+        when(productoRepository.findById(productoId))
+                .thenReturn(Optional.of(producto));
+        
+        // Mock: DescuentoService lanza excepción
+        when(descuentoService.aplicarDescuentos(eq(producto), any(DescuentoContexto.class)))
+                .thenThrow(new RuntimeException("Error interno del servicio de descuentos"));
+
+        // Act & Assert
+        ProductoException exception = assertThrows(
+                ProductoException.class,
+                () -> productoService.calcularPrecioConDescuento(productoId, cantidadEnCarrito, esUsuarioVIP)
+        );
+        
+        assertThat(exception.getMessage()).contains("Error calculando precio con descuento");
+        
+        logger.info("✅ Test exitoso: Error del servicio de descuentos manejado correctamente");
+    }
+    
+    // =============================================
+    // MÉTODOS HELPER PARA TESTS
+    // =============================================
+    
+    /**
+     * Crea un producto para tests con datos específicos.
+     * EDUCATIVO: Método helper que evita duplicación de código en tests.
+     */
+    private Producto crearProductoParaTest(Long id, String nombre, String categoria, BigDecimal precio) {
+        Producto producto = new Producto();
+        producto.setId(id);
+        producto.setNombre(nombre);
+        producto.setCategoria(categoria);
+        producto.setPrecio(precio);
+        producto.setDescripcion("Producto para test");
+        producto.setMarca("Test Brand");
+        producto.setStockDisponible(10);
+        producto.setActivo(Boolean.TRUE);
+        producto.setFechaCreacion(LocalDateTime.now());
+        return producto;
     }
 }

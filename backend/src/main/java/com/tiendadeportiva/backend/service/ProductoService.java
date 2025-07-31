@@ -11,6 +11,7 @@ import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
+import com.tiendadeportiva.backend.service.descuento.DescuentoContexto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -253,6 +254,78 @@ public class ProductoService implements IProductoService {
         logger.info("✅ Encontradas {} categorías disponibles", categorias.size());
         
         return categorias;
+    }
+
+    // =============================================
+    // OPERACIONES DE PRECIOS Y DESCUENTOS (NUEVA FUNCIONALIDAD)
+    // =============================================
+
+    /**
+     * Calcula el precio final de un producto aplicando descuentos disponibles.
+     * 
+     * IMPLEMENTACIÓN DEL STRATEGY PATTERN:
+     * 1. Obtiene el producto de la base de datos
+     * 2. Construye el contexto de descuento con los parámetros
+     * 3. Delega al DescuentoService (coordinador) la selección de estrategia
+     * 4. Extrae el precio final del resultado
+     * 
+     * EDUCATIVO PARA JUNIORS:
+     * - Este método es un ejemplo de "Facade Pattern" simple
+     * - Coordina múltiples operaciones pero delega la lógica compleja
+     * - Maneja errores específicos del dominio (ProductoNoEncontrado)
+     * - Mantiene logging detallado para debugging
+     * - Convierte entre diferentes formatos de datos (DescuentoInfo -> BigDecimal)
+     */
+    @Override
+    public BigDecimal calcularPrecioConDescuento(Long productoId, Integer cantidadEnCarrito, boolean esUsuarioVIP) {
+        logger.info("💰 Calculando precio con descuento - Producto ID: {}, Cantidad: {}, VIP: {}", 
+                   productoId, cantidadEnCarrito, esUsuarioVIP);
+        
+        try {
+            // PASO 1: Obtener el producto
+            Optional<Producto> productoOpt = obtenerProductoPorId(productoId);
+            if (productoOpt.isEmpty()) {
+                logger.warn("❌ Producto con ID {} no encontrado para cálculo de descuento", productoId);
+                throw new ProductoNoEncontradoException("No se encontró producto con ID: " + productoId);
+            }
+            
+            Producto producto = productoOpt.get();
+            BigDecimal precioBase = producto.getPrecio();
+            
+            logger.debug("📦 Producto encontrado: {} - Precio base: ${}", 
+                        producto.getNombre(), precioBase);
+            
+            // PASO 2: Construir contexto de descuento
+            DescuentoContexto contexto = DescuentoContexto.builder()
+                    .conCantidadEnCarrito(cantidadEnCarrito)
+                    .conTipoUsuario(esUsuarioVIP ? "VIP" : "REGULAR")
+                    .build();
+            
+            logger.debug("🔧 Contexto de descuento construido: Cantidad={}, VIP={}", 
+                        cantidadEnCarrito, esUsuarioVIP);
+            
+            // PASO 3: Aplicar descuentos usando Strategy Pattern
+            DescuentoService.DescuentoInfo descuentoInfo = descuentoService.aplicarDescuentos(producto, contexto);
+            
+            // PASO 4: Extraer precio final del resultado
+            BigDecimal precioFinal = descuentoInfo.getPrecioFinal();
+            
+            logger.info("✅ Precio calculado - Base: ${}, Descuento: ${}, Final: ${}, Estrategia: {}", 
+                       descuentoInfo.getPrecioOriginal(), 
+                       descuentoInfo.getTotalDescuento(), 
+                       precioFinal,
+                       descuentoInfo.getEstrategiaAplicada());
+            
+            return precioFinal;
+            
+        } catch (ProductoNoEncontradoException e) {
+            // Re-lanzar excepción específica del dominio
+            throw e;
+        } catch (Exception e) {
+            logger.error("💥 Error inesperado calculando precio con descuento para producto {}: {}", 
+                        productoId, e.getMessage(), e);
+            throw new ProductoException("DESCUENTO_ERROR", "Error calculando precio con descuento: " + e.getMessage());
+        }
     }
 
     // =============================================
