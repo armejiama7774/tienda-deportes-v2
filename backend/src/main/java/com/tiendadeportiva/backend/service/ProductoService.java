@@ -7,6 +7,8 @@ import com.tiendadeportiva.backend.command.producto.CrearProductoCommand;
 import com.tiendadeportiva.backend.command.producto.EliminarProductoCommand;
 import com.tiendadeportiva.backend.domain.port.EventPublisherPort;
 import com.tiendadeportiva.backend.domain.port.ProductoRepositoryPort;
+import com.tiendadeportiva.backend.event.ProductoEventPublisher;
+import com.tiendadeportiva.backend.event.ProductoEventType;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
@@ -30,6 +32,12 @@ import java.util.Optional;
  * - Mantiene queries directas para simplificar (preparación para CQRS)
  * - Separación clara entre commands y queries
  * - Independiente de tecnologías específicas en commands
+ * 
+ * OBSERVER PATTERN INTEGRADO:
+ * - Emite eventos automáticamente durante operaciones CRUD
+ * - Notifica cambios de stock y precios en tiempo real
+ * - Mantiene separación entre lógica de negocio y eventos
+ * - Permite auditoría y monitoreo transparente
  */
 @Service
 @Transactional
@@ -45,18 +53,23 @@ public class ProductoService implements IProductoService {
 
     // 🎯 REPOSITORIO DIRECTO PARA QUERIES (PREPARACIÓN CQRS)
     private final ProductoRepository queryRepository;
+    
+    // 🔔 OBSERVER PATTERN PUBLISHER
+    private final ProductoEventPublisher observerPublisher;
 
     public ProductoService(
             ProductoRepositoryPort repositoryPort,
             EventPublisherPort eventPublisherPort,
             DescuentoService descuentoService,
             CommandHandler commandHandler,
-            ProductoRepository queryRepository) {
+            ProductoRepository queryRepository,
+            ProductoEventPublisher observerPublisher) {
         this.repositoryPort = repositoryPort;
         this.eventPublisherPort = eventPublisherPort;
         this.descuentoService = descuentoService;
         this.commandHandler = commandHandler;
         this.queryRepository = queryRepository;
+        this.observerPublisher = observerPublisher;
     }
 
     // =============================================
@@ -175,9 +188,31 @@ public class ProductoService implements IProductoService {
         }
 
         Producto producto = productoOpt.get();
+        Integer stockAnterior = producto.getStockDisponible();
+        
         producto.setStockDisponible(nuevoStock);
         producto.setFechaModificacion(LocalDateTime.now()); // ✅ CORRECCIÓN: Actualizar fecha
-        queryRepository.save(producto);
+        
+        // Guardar el producto actualizado
+        Producto productoGuardado = queryRepository.save(producto);
+        
+        // 🔔 OBSERVER PATTERN: Emitir eventos de stock
+        String usuario = obtenerUsuarioActual();
+        
+        // Evento principal de stock actualizado
+        observerPublisher.notifyStockActualizado(productoGuardado, usuario);
+        
+        // Eventos específicos según el nivel de stock
+        if (nuevoStock == 0) {
+            observerPublisher.notifyEvent(ProductoEventType.STOCK_AGOTADO, productoGuardado, 
+                "Stock agotado - era: " + stockAnterior + " unidades");
+        } else if (nuevoStock <= 5 && stockAnterior > 5) {
+            observerPublisher.notifyEvent(ProductoEventType.STOCK_BAJO, productoGuardado,
+                "Stock bajo detectado - anterior: " + stockAnterior + ", actual: " + nuevoStock);
+        }
+        
+        logger.info("📦 Stock actualizado para producto '{}': {} -> {} unidades", 
+                   producto.getNombre(), stockAnterior, nuevoStock);
 
         return true;
     }
@@ -261,13 +296,66 @@ public class ProductoService implements IProductoService {
     // =============================================
 
     /**
+     * 🆕 NUEVO MÉTODO CON OBSERVER PATTERN
+     * Actualiza el precio de un producto y emite eventos automáticamente.
+     * 
+     * DEMO DEL OBSERVER PATTERN:
+     * - Actualiza el precio en la base de datos
+     * - Emite evento de cambio de precio con datos del precio anterior
+     * - Los observadores reaccionan automáticamente (logging, alertas, etc.)
+     * - Demuestra separación entre lógica de negocio y efectos secundarios
+     */
+    public boolean actualizarPrecio(Long id, BigDecimal nuevoPrecio) {
+        logger.info("💰 Actualizando precio para producto ID: {} -> ${}", id, nuevoPrecio);
+        
+        // Validaciones básicas
+        if (nuevoPrecio == null || nuevoPrecio.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ProductoException("PRECIO_INVALIDO", "El precio debe ser positivo");
+        }
+        
+        Optional<Producto> productoOpt = queryRepository.findById(id);
+        if (productoOpt.isEmpty() || !Boolean.TRUE.equals(productoOpt.get().isActivo())) {
+            throw new ProductoNoEncontradoException(id);
+        }
+        
+        Producto producto = productoOpt.get();
+        BigDecimal precioAnterior = producto.getPrecio();
+        
+        // Solo actualizar si el precio realmente cambió
+        if (precioAnterior.compareTo(nuevoPrecio) == 0) {
+            logger.info("💡 Precio no cambió para producto '{}', no se requiere actualización", 
+                       producto.getNombre());
+            return false;
+        }
+        
+        // Actualizar el precio
+        producto.setPrecio(nuevoPrecio);
+        producto.setFechaModificacion(LocalDateTime.now());
+        
+        Producto productoGuardado = queryRepository.save(producto);
+        
+        // 🔔 OBSERVER PATTERN: Emitir evento de cambio de precio
+        observerPublisher.notifyPrecioCambiado(
+            productoGuardado, 
+            obtenerUsuarioActual(), 
+            precioAnterior  // Datos adicionales con el precio anterior
+        );
+        
+        logger.info("✅ Precio actualizado para '{}': ${} -> ${}", 
+                   producto.getNombre(), precioAnterior, nuevoPrecio);
+        
+        return true;
+    }
+
+    /**
      * Calcula el precio final de un producto aplicando descuentos disponibles.
      * 
-     * IMPLEMENTACIÓN DEL STRATEGY PATTERN:
+     * IMPLEMENTACIÓN DEL STRATEGY PATTERN + OBSERVER PATTERN:
      * 1. Obtiene el producto de la base de datos
      * 2. Construye el contexto de descuento con los parámetros
      * 3. Delega al DescuentoService (coordinador) la selección de estrategia
      * 4. Extrae el precio final del resultado
+     * 5. 🔔 Emite eventos cuando se aplican descuentos
      * 
      * EDUCATIVO PARA JUNIORS:
      * - Este método es un ejemplo de "Facade Pattern" simple
@@ -275,6 +363,7 @@ public class ProductoService implements IProductoService {
      * - Maneja errores específicos del dominio (ProductoNoEncontrado)
      * - Mantiene logging detallado para debugging
      * - Convierte entre diferentes formatos de datos (DescuentoInfo -> BigDecimal)
+     * - 🆕 Demuestra integración de Observer Pattern en operaciones de negocio
      */
     @Override
     public BigDecimal calcularPrecioConDescuento(Long productoId, Integer cantidadEnCarrito, boolean esUsuarioVIP) {
@@ -315,6 +404,19 @@ public class ProductoService implements IProductoService {
                        descuentoInfo.getTotalDescuento(), 
                        precioFinal,
                        descuentoInfo.getEstrategiaAplicada());
+            
+            // PASO 5: 🔔 OBSERVER PATTERN - Emitir evento si se aplicó descuento
+            if (descuentoInfo.getTotalDescuento().compareTo(BigDecimal.ZERO) > 0) {
+                String detallesDescuento = String.format(
+                    "Descuento aplicado: $%.2f usando %s (Usuario: %s, Cantidad: %d)",
+                    descuentoInfo.getTotalDescuento(),
+                    descuentoInfo.getEstrategiaAplicada(),
+                    esUsuarioVIP ? "VIP" : "REGULAR",
+                    cantidadEnCarrito
+                );
+                
+                observerPublisher.notifyDescuentoAplicado(producto, obtenerUsuarioActual(), detallesDescuento);
+            }
             
             return precioFinal;
             

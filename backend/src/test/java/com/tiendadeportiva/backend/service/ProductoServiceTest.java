@@ -2,6 +2,9 @@ package com.tiendadeportiva.backend.service;
 
 import com.tiendadeportiva.backend.command.CommandExecutionException; // ✅ IMPORT AGREGADO
 import com.tiendadeportiva.backend.command.CommandHandler;
+import com.tiendadeportiva.backend.domain.port.EventPublisherPort;
+import com.tiendadeportiva.backend.domain.port.ProductoRepositoryPort;
+import com.tiendadeportiva.backend.event.ProductoEventPublisher;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
 import com.tiendadeportiva.backend.model.Producto;
@@ -34,17 +37,26 @@ class ProductoServiceTest {
 
     private static final Logger logger = LoggerFactory.getLogger(ProductoServiceTest.class);
 
+    // 🎯 MOCKS PARA PUERTOS (ARQUITECTURA HEXAGONAL)
     @Mock
-    private ProductoRepository productoRepository;
+    private ProductoRepositoryPort repositoryPort;
 
     @Mock
-    private ApplicationEventPublisher applicationEventPublisher;
+    private EventPublisherPort eventPublisherPort;
 
     @Mock
     private DescuentoService descuentoService;
 
     @Mock
     private CommandHandler commandHandler;
+
+    // 🎯 MOCK PARA QUERY REPOSITORY (PREPARACIÓN CQRS)
+    @Mock
+    private ProductoRepository queryRepository;
+
+    // 🔔 MOCK PARA OBSERVER PATTERN
+    @Mock
+    private ProductoEventPublisher observerPublisher;
 
     @InjectMocks
     private ProductoService productoService;
@@ -70,7 +82,7 @@ class ProductoServiceTest {
     void debeObtenerTodosLosProductosActivos() {
         // Arrange
         List<Producto> productosEsperados = List.of(productoValido);
-        when(productoRepository.findByActivoTrueOrderByFechaCreacionDesc())
+        when(queryRepository.findByActivoTrueOrderByFechaCreacionDesc())
                 .thenReturn(productosEsperados);
 
         // Act
@@ -82,7 +94,7 @@ class ProductoServiceTest {
                 .hasSize(1)
                 .containsExactly(productoValido);
         
-        verify(productoRepository).findByActivoTrueOrderByFechaCreacionDesc();
+        verify(queryRepository).findByActivoTrueOrderByFechaCreacionDesc();
     }
 
     @Test
@@ -93,7 +105,7 @@ class ProductoServiceTest {
         productoValido.setId(productId);
         productoValido.setActivo(Boolean.TRUE); // ✅ CORRECCIÓN: Boolean wrapper
         
-        when(productoRepository.findById(productId))
+        when(queryRepository.findById(productId))
                 .thenReturn(Optional.of(productoValido));
 
         // Act
@@ -104,7 +116,7 @@ class ProductoServiceTest {
                 .isPresent()
                 .contains(productoValido);
         
-        verify(productoRepository).findById(productId);
+        verify(queryRepository).findById(productId);
     }
 
     @Test
@@ -117,7 +129,7 @@ class ProductoServiceTest {
         productoEliminado.setNombre("Producto Eliminado");
         productoEliminado.setActivo(Boolean.FALSE); // ✅ CORRECCIÓN: Boolean wrapper
         
-        when(productoRepository.findById(productId))
+        when(queryRepository.findById(productId))
         .thenReturn(Optional.of(productoEliminado));
         
         // Act
@@ -125,7 +137,7 @@ class ProductoServiceTest {
         
         // Assert
         assertThat(resultado).isEmpty();
-        verify(productoRepository).findById(productId);
+        verify(queryRepository).findById(productId);
     }
 
     @Test
@@ -195,7 +207,7 @@ class ProductoServiceTest {
     void debeRetornarOptionalVacioCuandoProductoNoExisteOEstaInactivo() {
         // Arrange
         Long productId = 999L;
-        when(productoRepository.findById(productId))
+        when(queryRepository.findById(productId))
                 .thenReturn(Optional.empty());
 
         // Act
@@ -203,7 +215,7 @@ class ProductoServiceTest {
 
         // Assert
         assertThat(productoObtenido).isEmpty();
-        verify(productoRepository).findById(productId);
+        verify(queryRepository).findById(productId);
     }
 
     @Test
@@ -213,9 +225,9 @@ class ProductoServiceTest {
         Long productId = 1L;
         Integer nuevoStock = 25;
         
-        when(productoRepository.findById(productId))
+        when(queryRepository.findById(productId))
                 .thenReturn(Optional.of(productoValido));
-        when(productoRepository.save(any(Producto.class)))
+        when(queryRepository.save(any(Producto.class)))
                 .thenReturn(productoValido);
 
         // Act
@@ -224,8 +236,8 @@ class ProductoServiceTest {
         // Assert
         assertThat(resultado).isTrue();
         assertThat(productoValido.getStockDisponible()).isEqualTo(nuevoStock);
-        verify(productoRepository).findById(productId);
-        verify(productoRepository).save(productoValido);
+        verify(queryRepository).findById(productId);
+        verify(queryRepository).save(productoValido);
     }
 
     @Test
@@ -242,8 +254,8 @@ class ProductoServiceTest {
         assertThat(exception.getCodigo()).isEqualTo("STOCK_INVALIDO");
         assertThat(exception.getMessage()).contains("negativo");
         
-        verify(productoRepository, never()).findById(any());
-        verify(productoRepository, never()).save(any());
+        verify(queryRepository, never()).findById(any());
+        verify(queryRepository, never()).save(any());
     }
 
     @Test
@@ -253,15 +265,15 @@ class ProductoServiceTest {
         Long productIdInexistente = 999L;
         Integer nuevoStock = 10;
         
-        when(productoRepository.findById(productIdInexistente))
+        when(queryRepository.findById(productIdInexistente))
                 .thenReturn(Optional.empty());
 
         // Act & Assert
         ProductoNoEncontradoException exception = assertThrows(ProductoNoEncontradoException.class,
                 () -> productoService.actualizarStock(productIdInexistente, nuevoStock));
 
-        verify(productoRepository).findById(productIdInexistente);
-        verify(productoRepository, never()).save(any());
+        verify(queryRepository).findById(productIdInexistente);
+        verify(queryRepository, never()).save(any());
     }
 
     @Test
@@ -270,7 +282,7 @@ class ProductoServiceTest {
         // Arrange
         String categoria = "Camisetas";
         List<Producto> productosEsperados = List.of(productoValido);
-        when(productoRepository.findByCategoriaAndActivoTrue(categoria))
+        when(queryRepository.findByCategoriaAndActivoTrue(categoria))
                 .thenReturn(productosEsperados);
 
         // Act
@@ -282,7 +294,7 @@ class ProductoServiceTest {
                 .hasSize(1)
                 .containsExactly(productoValido);
         
-        verify(productoRepository).findByCategoriaAndActivoTrue(categoria);
+        verify(queryRepository).findByCategoriaAndActivoTrue(categoria);
     }
 
     @Test
@@ -291,7 +303,7 @@ class ProductoServiceTest {
         // Arrange
         String marca = "Nike";
         List<Producto> productosEsperados = List.of(productoValido);
-        when(productoRepository.findByMarcaAndActivoTrue(marca))
+        when(queryRepository.findByMarcaAndActivoTrue(marca))
                 .thenReturn(productosEsperados);
 
         // Act
@@ -303,7 +315,7 @@ class ProductoServiceTest {
                 .hasSize(1)
                 .containsExactly(productoValido);
         
-        verify(productoRepository).findByMarcaAndActivoTrue(marca);
+        verify(queryRepository).findByMarcaAndActivoTrue(marca);
     }
 
     @Test
@@ -312,7 +324,7 @@ class ProductoServiceTest {
         // Arrange
         String nombre = "Camiseta";
         List<Producto> productosEsperados = List.of(productoValido);
-        when(productoRepository.findByNombreContainingIgnoreCaseAndActivoTrue(nombre))
+        when(queryRepository.findByNombreContainingIgnoreCaseAndActivoTrue(nombre))
                 .thenReturn(productosEsperados);
 
         // Act
@@ -324,7 +336,7 @@ class ProductoServiceTest {
                 .hasSize(1)
                 .containsExactly(productoValido);
         
-        verify(productoRepository).findByNombreContainingIgnoreCaseAndActivoTrue(nombre);
+        verify(queryRepository).findByNombreContainingIgnoreCaseAndActivoTrue(nombre);
     }
 
     @Test
@@ -397,7 +409,7 @@ class ProductoServiceTest {
         Producto producto = crearProductoParaTest(productoId, "Zapatos Nike", "Zapatos", new BigDecimal("100.00"));
         
         // Mock: El producto existe
-        when(productoRepository.findById(productoId))
+        when(queryRepository.findById(productoId))
                 .thenReturn(Optional.of(producto));
         
         // Mock: DescuentoService retorna información con descuento
@@ -419,7 +431,7 @@ class ProductoServiceTest {
         assertThat(precioFinal).isEqualTo(precioEsperado);
         
         // Verify: Se llamó al repositorio para obtener el producto
-        verify(productoRepository).findById(productoId);
+        verify(queryRepository).findById(productoId);
         
         // Verify: Se llamó al servicio de descuentos con el contexto correcto
         verify(descuentoService).aplicarDescuentos(eq(producto), any(DescuentoContexto.class));
@@ -439,7 +451,7 @@ class ProductoServiceTest {
         Producto producto = crearProductoParaTest(productoId, "Camiseta Adidas", "Camisetas", new BigDecimal("100.00"));
         
         // Mock: El producto existe
-        when(productoRepository.findById(productoId))
+        when(queryRepository.findById(productoId))
                 .thenReturn(Optional.of(producto));
         
         // Mock: DescuentoService retorna mayor descuento para VIP
@@ -478,7 +490,7 @@ class ProductoServiceTest {
         boolean esUsuarioVIP = false;
         
         // Mock: El producto no existe
-        when(productoRepository.findById(productoIdInexistente))
+        when(queryRepository.findById(productoIdInexistente))
                 .thenReturn(Optional.empty());
 
         // Act & Assert
@@ -506,7 +518,7 @@ class ProductoServiceTest {
         Producto producto = crearProductoParaTest(productoId, "Pantalones Nike", "Pantalones", new BigDecimal("80.00"));
         
         // Mock: El producto existe
-        when(productoRepository.findById(productoId))
+        when(queryRepository.findById(productoId))
                 .thenReturn(Optional.of(producto));
         
         // Mock: DescuentoService lanza excepción
