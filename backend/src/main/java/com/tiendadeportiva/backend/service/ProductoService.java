@@ -11,6 +11,8 @@ import com.tiendadeportiva.backend.event.ProductoEventPublisher;
 import com.tiendadeportiva.backend.event.ProductoEventType;
 import com.tiendadeportiva.backend.exception.ProductoException;
 import com.tiendadeportiva.backend.exception.ProductoNoEncontradoException;
+import com.tiendadeportiva.backend.factory.ProductoCreationRequest;
+import com.tiendadeportiva.backend.factory.ProductoFactoryManager;
 import com.tiendadeportiva.backend.model.Producto;
 import com.tiendadeportiva.backend.repository.ProductoRepository;
 import com.tiendadeportiva.backend.service.descuento.DescuentoContexto;
@@ -56,6 +58,9 @@ public class ProductoService implements IProductoService {
     
     // 🔔 OBSERVER PATTERN PUBLISHER
     private final ProductoEventPublisher observerPublisher;
+    
+    // 🏭 FACTORY PATTERN MANAGER
+    private final ProductoFactoryManager factoryManager;
 
     public ProductoService(
             ProductoRepositoryPort repositoryPort,
@@ -63,13 +68,15 @@ public class ProductoService implements IProductoService {
             DescuentoService descuentoService,
             CommandHandler commandHandler,
             ProductoRepository queryRepository,
-            ProductoEventPublisher observerPublisher) {
+            ProductoEventPublisher observerPublisher,
+            ProductoFactoryManager factoryManager) {
         this.repositoryPort = repositoryPort;
         this.eventPublisherPort = eventPublisherPort;
         this.descuentoService = descuentoService;
         this.commandHandler = commandHandler;
         this.queryRepository = queryRepository;
         this.observerPublisher = observerPublisher;
+        this.factoryManager = factoryManager;
     }
 
     // =============================================
@@ -142,6 +149,81 @@ public class ProductoService implements IProductoService {
 
             throw new ProductoException(e.getErrorCode(), e.getMessage(), e);
         }
+    }
+
+    // =============================================
+    // 🆕 FACTORY PATTERN - CREACIÓN ESPECIALIZADA
+    // =============================================
+
+    /**
+     * 🆕 NUEVO MÉTODO CON FACTORY PATTERN
+     * Crea productos usando factories especializadas con validaciones y configuraciones automáticas.
+     * 
+     * DEMO DEL FACTORY PATTERN:
+     * - Selecciona automáticamente la factory apropiada según el tipo
+     * - Aplica validaciones específicas por tipo de producto  
+     * - Configura propiedades automáticamente según características
+     * - Integra con Observer Pattern para notificar creación
+     * - Proporciona mejor experiencia que creación manual
+     * 
+     * VENTAJAS VS MÉTODO TRADICIONAL:
+     * - Validaciones automáticas específicas por tipo
+     * - Configuraciones por defecto inteligentes
+     * - Extensible para nuevos tipos sin modificar código existente
+     * - Mejor separación de responsabilidades
+     * - Facilita testing con mocks
+     */
+    public Producto crearProductoConFactory(ProductoCreationRequest request) {
+        logger.info("🏭 Creando producto con Factory Pattern: {} (Tipo: {}/{})", 
+                   request.getNombre(), request.getCategoria(), request.getTipo());
+        
+        try {
+            // PASO 1: Usar Factory Pattern para crear y configurar el producto
+            Producto productoCreado = factoryManager.crearProducto(request);
+            
+            // PASO 2: Persistir usando el método tradicional
+            Producto productoGuardado = crearProducto(productoCreado);
+            
+            // PASO 3: 🔔 Observer Pattern - Notificar creación con factory info
+            observerPublisher.notifyEvent(
+                ProductoEventType.PRODUCTO_CREADO,
+                productoGuardado,
+                String.format("Producto creado con Factory Pattern - Tipo: %s, Factory: %s", 
+                            request.getTipo(), 
+                            factoryManager.getClass().getSimpleName())
+            );
+            
+            logger.info("✅ Producto creado exitosamente con Factory Pattern: {} (ID: {})", 
+                       productoGuardado.getNombre(), productoGuardado.getId());
+            
+            return productoGuardado;
+            
+        } catch (Exception e) {
+            logger.error("❌ Error creando producto con Factory Pattern: {}", e.getMessage(), e);
+            throw new ProductoException("FACTORY_CREATION_ERROR", 
+                                      "Error creando producto con Factory Pattern: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Valida si se puede crear un producto del tipo especificado.
+     */
+    public boolean puedeCrearTipoProducto(String categoria, String tipo) {
+        return factoryManager.puedeCrear(categoria, tipo);
+    }
+    
+    /**
+     * Obtiene información sobre los tipos de productos que se pueden crear.
+     */
+    public ProductoFactoryManager.FactoryInfo getFactoryInfo() {
+        return factoryManager.getFactoryInfo();
+    }
+    
+    /**
+     * Valida una petición de creación antes de procesarla.
+     */
+    public ProductoFactoryManager.ValidationResult validarPeticionCreacion(ProductoCreationRequest request) {
+        return factoryManager.validarPeticion(request);
     }
 
     // =============================================
